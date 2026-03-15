@@ -4,51 +4,46 @@ import os
 import random
 from core.db_handler import update_srs, get_due_questions
 
-st.set_page_config(page_title="クイズモード", layout="wide")
+st.set_page_config(page_title="クイズモード", layout="wide", initial_sidebar_state="auto")
 
-# Custom CSS for Anki-like UI
+# Stable CSS for fixes
 st.markdown("""
 <style>
+    /* 1. Mobile Sidebar Fix */
+    [data-testid="stHeader"] {
+        z-index: 1000000 !important;
+        background: rgba(255, 255, 255, 0.8) !important;
+    }
+    
+    /* 2. Button and Layout Stability */
     .stButton > button {
         width: 100%;
-        border-radius: 5px;
+        border-radius: 8px;
         height: auto;
-        min-height: 3em;
+        min-height: 3.2em;
         font-weight: bold;
         text-align: left;
-        padding: 10px 20px;
+        padding: 10px 15px;
         white-space: normal;
-        display: block;
+        margin-bottom: 5px;
     }
+    
     .question-box {
         background-color: #f0f2f6;
         padding: 20px;
         border-radius: 10px;
         border-left: 5px solid #007bff;
-        margin-bottom: 20px;
+        margin-bottom: 15px;
+        min-height: 120px;
     }
+    
     .answer-box {
         background-color: #e7f3ff;
-        padding: 20px;
+        padding: 15px;
         border-radius: 10px;
         border-left: 5px solid #28a745;
-        margin-top: 20px;
+        margin-top: 15px;
     }
-    .choice-box {
-        margin: 10px 0;
-        padding: 10px;
-        border: 1px solid #ddd;
-        border-radius: 5px;
-    }
-    .correct-choice {
-        background-color: #d4edda;
-        border-color: #c3e6cb;
-    }
-    /* Rating Buttons */
-    .btn-again { background-color: #ff4b4b !important; color: white !important; }
-    .btn-hard { background-color: #ffa500 !important; color: white !important; }
-    .btn-good { background-color: #007bff !important; color: white !important; }
-    .btn-easy { background-color: #28a745 !important; color: white !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -59,11 +54,11 @@ def load_questions():
 def main():
     st.title("🧠 クイズモード (SRS学習)")
     
+    # Initialize session state (Stable)
     if 'questions' not in st.session_state:
         all_questions = load_questions()
         due_ids = get_due_questions()
         
-        # If no due questions, show all or some random ones
         if not due_ids:
             st.session_state.questions = all_questions
             random.shuffle(st.session_state.questions)
@@ -77,7 +72,7 @@ def main():
 
     if not st.session_state.questions:
         st.success("🎉 現在復習すべき問題はありません！")
-        if st.button("全問題から学習する"):
+        if st.button("全問題から学習する", key="reset_all"):
             del st.session_state.questions
             st.rerun()
         return
@@ -85,40 +80,44 @@ def main():
     if st.session_state.current_index >= len(st.session_state.questions):
         st.balloons()
         st.success("本日の学習セッションが完了しました！")
-        if st.button("もう一度最初から"):
+        if st.button("もう一度最初から", key="restart"):
             st.session_state.current_index = 0
             random.shuffle(st.session_state.questions)
+            st.session_state.show_answer = False
+            st.session_state.user_choice = None
             st.rerun()
         return
 
     q = st.session_state.questions[st.session_state.current_index]
     
     # Progress
-    st.write(f"問題 {st.session_state.current_index + 1} / {len(st.session_state.questions)}")
+    st.caption(f"問題 {st.session_state.current_index + 1} / {len(st.session_state.questions)}")
     
-    # Question Display (Always visible at top)
+    # Question Display
     st.markdown(f"""
     <div class="question-box">
-        <h4>{q['section_label']} - Q{q['question_no']}</h4>
-        <p style="font-size: 1.1em;">{q['stem']}</p>
+        <div style="color: #666; font-size: 0.8em;">{q['section_label']} - Q{q['question_no']}</div>
+        <div style="font-size: 1.1em; margin-top: 5px;">{q['stem']}</div>
     </div>
     """, unsafe_allow_html=True)
     
-    # Choices Display (Always visible)
+    # Answer Choice Logic
     if not st.session_state.show_answer:
-        st.write("### 選択肢を選択してください")
+        st.markdown("##### 選択肢を選択してください")
         for choice in q['choices']:
-            if st.button(f"{choice['label']}: {choice['text']}", key=f"btn_{choice['label']}", use_container_width=True):
+            # Key with current_index to prevent cross-question state pollution
+            btn_key = f"choice_{st.session_state.current_index}_{choice['label']}"
+            if st.button(f"{choice['label']}: {choice['text']}", key=btn_key):
                 st.session_state.user_choice = choice['label']
                 st.session_state.show_answer = True
                 st.rerun()
         
-        if st.button("解答だけ表示する", key="show_raw"):
+        if st.button("解答だけ表示する", key=f"show_raw_{st.session_state.current_index}"):
             st.session_state.user_choice = None
             st.session_state.show_answer = True
             st.rerun()
     else:
-        # Show choices as static boxes when answer is revealed
+        # Result Display (Static Boxes)
         for choice in q['choices']:
             is_correct = (choice['label'] == q['answer'])
             was_selected = (choice['label'] == st.session_state.user_choice)
@@ -128,27 +127,19 @@ def main():
             icon = "✅ " if is_correct else ("❌ " if was_selected else "")
             
             st.markdown(f"""
-            <div style="background-color: {bg_color}; padding: 10px 20px; margin: 5px 0; border-radius: 5px; border: {border_style}; text-align: left;">
+            <div style="background-color: {bg_color}; padding: 10px 15px; margin: 5px 0; border-radius: 8px; border: {border_style}; text-align: left;">
                 <strong>{icon}{choice['label']}:</strong> {choice['text']}
             </div>
             """, unsafe_allow_html=True)
 
-    st.divider()
+        st.divider()
 
-    if st.session_state.show_answer:
-        # Answer Display
+        # Feedback and SRS
         if st.session_state.user_choice:
-            is_correct = (st.session_state.user_choice == q['answer'])
-            if is_correct:
-                st.success(f"✨ 正解！ (あなたの回答: {st.session_state.user_choice})")
+            if st.session_state.user_choice == q['answer']:
+                st.success(f"✨ 正解！ (回答: {st.session_state.user_choice})")
             else:
-                st.error(f"❌ 不正解... (あなたの回答: {st.session_state.user_choice}, 正解: {q['answer']})")
-        
-        st.markdown(f"""
-        <div class="answer-box">
-            <h3>正解: {q['answer']}</h3>
-        </div>
-        """, unsafe_allow_html=True)
+                st.error(f"❌ 不正解... (回答: {st.session_state.user_choice}, 正解: {q['answer']})")
         
         st.markdown("#### 解説")
         if isinstance(q['choice_explanations'], list):
@@ -156,35 +147,31 @@ def main():
                 label = exp.get('label', '')
                 text = exp.get('explanation', '')
                 is_correct_label = (label == q['answer'])
-                was_user_choice = (label == st.session_state.user_choice)
                 
-                color = "#d4edda" if is_correct_label else ("#f8d7da" if was_user_choice else "#f0f2f6")
                 st.markdown(f"""
-                <div style="background-color: {color}; padding: 10px; margin: 5px 0; border-radius: 5px; text-align: left;">
+                <div style="background-color: {'#e8f5e9' if is_correct_label else '#fafafa'}; padding: 10px; margin: 5px 0; border-radius: 5px; border-left: 3px solid {'#2e7d32' if is_correct_label else '#ddd'};">
                     <strong>選択肢 {label}:</strong> {text}
                 </div>
                 """, unsafe_allow_html=True)
         
         st.divider()
-        st.write("この問題の難易度はどうでしたか？")
+        st.markdown("##### 難易度を評価して次へ")
         
-        # Rating Buttons
         col1, col2, col3, col4 = st.columns(4)
-        
         with col1:
-            if st.button("もう一度\n(1日後)", key="again"):
+            if st.button("もう一度\n(1日後)", key=f"rate0_{st.session_state.current_index}"):
                 update_srs(q['question_id'], 0)
                 next_question()
         with col2:
-            if st.button("難しい\n(1日後)", key="hard"):
+            if st.button("難しい\n(1日後)", key=f"rate1_{st.session_state.current_index}"):
                 update_srs(q['question_id'], 1)
                 next_question()
         with col3:
-            if st.button("普通\n(3日後)", key="good"):
+            if st.button("普通\n(3日後)", key=f"rate2_{st.session_state.current_index}"):
                 update_srs(q['question_id'], 2)
                 next_question()
         with col4:
-            if st.button("簡単\n(15日後)", key="easy"):
+            if st.button("簡単\n(15日後)", key=f"rate3_{st.session_state.current_index}"):
                 update_srs(q['question_id'], 3)
                 next_question()
 

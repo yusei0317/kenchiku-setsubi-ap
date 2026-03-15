@@ -3,20 +3,33 @@ import pandas as pd
 from datetime import datetime
 from core.db_handler import get_stats, get_master_data
 
-st.set_page_config(page_title="ダッシュボード", layout="wide")
+# initial_sidebar_state="auto" to allow users to toggle, but visible
+st.set_page_config(page_title="ダッシュボード", layout="wide", initial_sidebar_state="auto")
 
-# Custom CSS for modern UI
+# Stable CSS to prevent layout shift and fix mobile sidebar
 st.markdown("""
 <style>
-    .main {
+    /* 1. Mobile Sidebar Fix: Ensure header and toggle are accessible */
+    [data-testid="stHeader"] {
+        z-index: 1000000 !important;
+        background: rgba(255, 255, 255, 0.8) !important;
+        backdrop-filter: blur(10px);
+    }
+    
+    /* 2. Prevent UI Shaking: Stable containers */
+    .stApp {
         background-color: #f8f9fa;
     }
-    .stMetric {
-        background-color: white;
-        padding: 15px;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    
+    /* Fixed height metrics and cards to prevent jumping */
+    div[data-testid="stMetric"] {
+        background-color: white !important;
+        padding: 15px !important;
+        border-radius: 10px !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
+        min-height: 100px;
     }
+
     .todo-card {
         background-color: white;
         padding: 20px;
@@ -24,21 +37,22 @@ st.markdown("""
         border-left: 5px solid #007bff;
         margin-bottom: 20px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        min-height: 300px; /* Stabilize height */
     }
+
     .exam-countdown {
         text-align: center;
-        padding: 20px;
-        margin-bottom: 30px;
+        padding: 10px;
+        margin-bottom: 20px;
     }
-    .big-action-button > button {
-        width: 100%;
-        height: 4em;
-        font-size: 1.2em !important;
-        border-radius: 15px !important;
-        background-color: #007bff !important;
-        color: white !important;
+    
+    /* Responsive button */
+    .big-action-button button {
+        width: 100% !important;
+        height: 3.5em !important;
+        font-size: 1.1em !important;
+        border-radius: 12px !important;
         font-weight: bold !important;
-        margin-top: 10px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -51,23 +65,22 @@ def main():
     
     st.markdown(f"""
     <div class="exam-countdown">
-        <h1 style='font-size: 2.5em; margin-bottom: 0;'>建築設備士試験まであと <span style='color: #ff4b4b;'>{max(0, days_left)}</span> 日</h1>
-        <p style='color: #666;'>試験日: 2026-06-21</p>
+        <h2 style='margin-bottom: 0;'>建築設備士試験まであと <span style='color: #ff4b4b;'>{max(0, days_left)}</span> 日</h2>
+        <p style='color: #666; font-size: 0.9em;'>試験日: 2026-06-21</p>
     </div>
     """, unsafe_allow_html=True)
 
-    # Data Loading
+    # Data Loading (Stable)
     df_status, df_history = get_stats()
     df_all = get_master_data()
     
     # Dashboard Content
-    st.markdown("### 📋 今日の ToDo")
+    st.subheader("📋 今日の ToDo")
     
-    with st.container():
-        st.markdown('<div class="todo-card">', unsafe_allow_html=True)
+    # Use a simple container without complex div nesting for stability
+    with st.container(border=True):
         col1, col2, col3, col4 = st.columns(4)
         
-        # Calculate some metrics
         daily_goal = 10
         today_str = today.strftime('%Y-%m-%d')
         today_history = df_history[df_history['timestamp'].str.contains(today_str)] if not df_history.empty else pd.DataFrame()
@@ -78,30 +91,19 @@ def main():
         with col2:
             st.metric("残り", f"{max(0, daily_goal - today_done)}問")
         with col3:
-            if not today_history.empty:
-                acc = int(today_history['is_correct'].mean() * 100)
-            else:
-                acc = 0
+            acc = int(today_history['is_correct'].mean() * 100) if not today_history.empty else 0
             st.metric("正答率", f"{acc}%")
         with col4:
             st.metric("モード", "標準学習")
             
-        # Progress Bar
-        progress = min(1.0, today_done / daily_goal)
-        st.progress(progress)
-        st.write(f"あと {max(0, daily_goal - today_done)} 問で今日の目標達成")
+        st.progress(min(1.0, today_done / daily_goal))
+        st.caption(f"あと {max(0, daily_goal - today_done)} 問で今日の目標達成")
         
-        # Big Action Button
-        st.markdown('<div class="big-action-button">', unsafe_allow_html=True)
-        if st.button("▶ 苦手分野集中で9問スタート", type="primary"):
-            st.toast("この機能は準備中です！")
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+        # Action Button (No rerun inside main loop without event)
+        if st.button("▶ 苦手分野集中で9問スタート", type="primary", use_container_width=True):
+            st.toast("機能準備中です。クイズメニューをお使いください。")
 
-    st.divider()
-
-    st.markdown("### 学習サマリー")
+    st.markdown("### 📊 学習サマリー")
     sum_col1, sum_col2, sum_col3 = st.columns(3)
     
     total_q = len(df_all) if not df_all.empty else 1
@@ -112,7 +114,7 @@ def main():
         total_acc = int(df_history['is_correct'].mean() * 100) if not df_history.empty else 0
         st.metric("全体正答率", f"{total_acc}%")
     with sum_col2:
-        st.metric("カバー率", f"{int(started_q/total_q*100)}%", help="一度でも解いた問題の割合")
+        st.metric("カバー率", f"{int(started_q/total_q*100)}%")
     with sum_col3:
         st.metric("マスター率", f"{int(mastered_q/total_q*100)}%")
 
