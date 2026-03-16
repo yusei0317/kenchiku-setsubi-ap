@@ -24,6 +24,16 @@ def get_notion_data():
             if not prop: return ""
             return prop.get("rich_text", [{}])[0].get("plain_text", "").strip() if prop.get("rich_text") else ""
 
+        # 画像URLの取得（Files & Media型とURL型の両方に対応）
+        img_url = ""
+        img_prop = p.get("image_url", {})
+        if img_prop.get("type") == "files":
+            files = img_prop.get("files", [])
+            if files:
+                img_url = files[0].get("file", {}).get("url") or files[0].get("external", {}).get("url")
+        elif img_prop.get("type") == "url":
+            img_url = img_prop.get("url")
+
         id_prop = p.get("id", {}).get("title", [])
         qid = id_prop[0].get("plain_text", "").strip() if id_prop else ""
         if not qid: continue
@@ -35,7 +45,7 @@ def get_notion_data():
             "answer": get_t("answer"),
             "choices": [get_t("choice_1"), get_t("choice_2"), get_t("choice_3"), get_t("choice_4")],
             "exps": [get_t("exp_1"), get_t("exp_2"), get_t("exp_3"), get_t("exp_4")],
-            "image_url": p.get("image_url", {}).get("url", ""),
+            "image_url": img_url,
             "interval": p.get("interval", {}).get("number", 0) or 0,
             "ease_factor": p.get("ease_factor", {}).get("number", 2.5) or 2.5,
             "reps": p.get("reps", {}).get("number", 0) or 0
