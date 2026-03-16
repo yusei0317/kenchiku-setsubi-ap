@@ -7,26 +7,26 @@ st.set_page_config(page_title="建築設備士クイズ", layout="wide")
 def main():
     st.title("🧠 建築設備士 択一クイズ")
 
+    # サイドバー設定
     st.sidebar.header("⚙️ 設定")
     mode = st.sidebar.radio("学習モード", ["忘却曲線モード", "全問トレーニング"])
     section_map = {"7": "7_配管とポンプ", "8": "8_ダクトと送風機", "10": "10_排煙設備"}
     selected_sections = st.sidebar.multiselect("分野選択", options=list(section_map.values()))
 
-    # 設定変更で問題をリセット
+    # 設定変更でリロード
     current_cfg = f"{mode}-{selected_sections}"
     if "last_cfg" not in st.session_state or st.session_state.last_cfg != current_cfg:
         if "questions" in st.session_state: del st.session_state.questions
         st.session_state.last_cfg = current_cfg
 
     if 'questions' not in st.session_state:
-        with st.spinner("Notionから最新データを取得中..."):
-            all_data = get_notion_data()
-            due_ids = get_due_questions()
-            qs = [q for q in all_data if (not selected_sections or section_map.get(q['q_id'].split('-')[0]) in selected_sections) and (mode == "全問トレーニング" or q['q_id'] in due_ids)]
-            random.shuffle(qs)
-            st.session_state.questions = qs
-            st.session_state.idx = 0
-            st.session_state.ans = False
+        all_data = get_notion_data()
+        due_ids = get_due_questions()
+        qs = [q for q in all_data if (not selected_sections or section_map.get(q['q_id'].split('-')[0]) in selected_sections) and (mode == "全問トレーニング" or q['q_id'] in due_ids)]
+        random.shuffle(qs)
+        st.session_state.questions = qs
+        st.session_state.idx = 0
+        st.session_state.ans = False
 
     if not st.session_state.questions:
         st.warning("対象の問題がありません。")
@@ -37,10 +37,9 @@ def main():
     st.subheader(q["question"])
 
     if not st.session_state.ans:
-        # 選択肢を表示（空の選択肢は除外）
         choices = [c for c in q["choices"] if c]
         if not choices:
-            st.error("Notionの choice1~4 が空、または列名が違います。")
+            st.error("選択肢(choice_1~4)の読み込みに失敗しました。Notionの列名を確認してください。")
             return
             
         user_choice = st.radio("選択肢を選んでください：", choices, index=None)
@@ -50,13 +49,13 @@ def main():
                 st.session_state.ans = True
                 st.rerun()
     else:
-        # 解答表示
+        # 正解判定
         if st.session_state.selected == q["answer"]:
             st.success(f"⭕ 正解！：{q['answer']}")
         else:
             st.error(f"❌ 不正解... 正解は：{q['answer']}")
         
-        # 画像解説を表示
+        # --- 画像解説を表示 ---
         if q["image_url"]:
             st.image(q["image_url"], caption="図解・解説画像")
         
