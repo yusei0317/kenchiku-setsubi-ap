@@ -13,20 +13,46 @@ def get_notion_data():
     db_id = st.secrets["notion"]["database_id"]
     url = f"https://api.notion.com/v1/databases/{db_id}/query"
     res = requests.post(url, headers=get_headers())
-    return res.json().get("results", [])
+    results = res.json().get("results", [])
+    
+    formatted_data = []
+    for item in results:
+        p = item.get("properties", {})
+        # タイトル（ID）
+        id_prop = p.get("id", {}).get("title", [])
+        qid = id_prop[0].get("plain_text", "") if id_prop else ""
+        if not qid: continue
+
+        # 各プロパティの安全な取得
+        def get_text(prop_name):
+            text_list = p.get(prop_name, {}).get("rich_text", [])
+            return text_list[0].get("plain_text", "") if text_list else ""
+
+        formatted_data.append({
+            "page_id": item.get("id"),
+            "q_id": qid,
+            "question": get_text("question"),
+            "answer": get_text("answer"),
+            "choices": [get_text("choice1"), get_text("choice2"), get_text("choice3"), get_text("choice4")],
+            "image_url": p.get("image_url", {}).get("url", ""),
+            "interval": p.get("interval", {}).get("number", 0) or 0,
+            "ease_factor": p.get("ease_factor", {}).get("number", 2.5) or 2.5,
+            "reps": p.get("reps", {}).get("number", 0) or 0
+        })
+    return formatted_data
 
 def update_srs_data(page_id, quality, prev_interval, prev_ease, prev_reps):
-    # SM-2 logic
-    if quality >= 2:
+    if quality >= 2: # 普通・簡単
         if prev_reps == 0: new_interval = 1
         elif prev_reps == 1: new_interval = 6
         else: new_interval = max(1, round(prev_interval * prev_ease))
         new_reps = prev_reps + 1
         new_ease = prev_ease + (0.1 - (3 - quality) * (0.08 + (3 - quality) * 0.02))
-    else:
+    else: # もう一度・難しい
         new_reps = 0
         new_interval = 1
         new_ease = max(1.3, prev_ease - 0.2)
+    
     new_ease = max(1.3, min(2.5, new_ease))
     next_date = (datetime.now() + timedelta(days=new_interval)).strftime('%Y-%m-%d')
     
