@@ -1,27 +1,35 @@
 import streamlit as st
-from core.db_handler import get_notion_data
+import sys
 
-# 1. ページ設定（一番最初に書く）
-st.set_page_config(page_title="建築設備士 SRS学習アプリ", layout="wide")
+# 1. ページ設定を一番最初に実行（これが無いと白紙になりやすい）
+st.set_page_config(page_title="建築設備士アプリ", layout="wide")
+
+try:
+    # 自作モジュールの読み込みを try 内で行う
+    from core.db_handler import get_notion_data
+except Exception as e:
+    st.error("【インポートエラー】core/db_handler.py からの読み込みに失敗しました。")
+    st.exception(e) # 画面にエラー詳細を表示
+    st.stop()
 
 def main():
     st.title("🏗️ 建築設備士 合格戦略アプリ")
-    st.write(f"ようこそ、後藤さん。Notionと連動して学習を管理します。")
-
-    # 2. Notionの接続テスト
+    
+    # 接続テスト
     try:
-        with st.spinner("Notionデータベースに接続中..."):
+        with st.spinner("Notionに接続中..."):
             data = get_notion_data()
             if data:
-                st.success("✅ Notionとの同期に成功しました！左メニューから各機能を選んでください。")
+                st.success("✅ Notion同期成功！左メニューから選んでください。")
             else:
-                st.warning("⚠️ Notionにデータが見つかりません。")
+                st.warning("⚠️ 接続はできましたが、データが空です。")
     except Exception as e:
-        st.error(f"❌ Notionへの接続に失敗しました。")
-        st.caption(f"エラー詳細: {e}")
+        st.error("❌ Notion接続エラー！Secretsの設定を確認してください。")
+        st.exception(e)
 
     st.divider()
-    st.write(r"排煙風量 $2\,m^3/s$ などの重要数値をマスターしましょう。")
+    # r"..." を使うことで LaTeX の警告を回避
+    st.write(r"排煙設備の風量 $2\,m^3/s$ などをマスターしましょう。")
 
 if __name__ == "__main__":
     main()
