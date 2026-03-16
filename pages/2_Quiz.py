@@ -1,92 +1,79 @@
 import streamlit as st
 import random
-# 1. 関数名を最新の Notion版 db_handler に合わせる
 from core.db_handler import get_notion_data, update_srs_data, get_due_questions
 
-# 2. ページ設定は一番最初に実行
 st.set_page_config(page_title="建築設備士クイズ", layout="wide")
 
 def main():
-    st.title("🧠 建築設備士 クイズ")
+    st.title("🧠 建築設備士 択一クイズ")
 
-    # サイドバーでモード・分野を選択
+    # サイドバー設定
     st.sidebar.header("⚙️ 設定")
     mode = st.sidebar.radio("学習モード", ["忘却曲線モード", "全問トレーニング"])
-    
     section_map = {"7": "7_配管とポンプ", "8": "8_ダクトと送風機", "10": "10_排煙設備"}
-    selected_sections = st.sidebar.multiselect("分野選択", options=list(section_map.values()), default=[])
+    selected_sections = st.sidebar.multiselect("分野選択", options=list(section_map.values()))
 
-    # 設定変更時に問題をリロード
+    # 設定変更検知
     current_cfg = f"{mode}-{selected_sections}"
     if "last_cfg" not in st.session_state or st.session_state.last_cfg != current_cfg:
         if "questions" in st.session_state: del st.session_state.questions
         st.session_state.last_cfg = current_cfg
 
-    # 3. データの取得
     if 'questions' not in st.session_state:
-        try:
-            with st.spinner("Notionから取得中..."):
-                all_raw = get_notion_data()
-                due_ids = get_due_questions()
-                
-                qs = []
-                for item in all_raw:
-                    p = item.get("properties", {})
-                    # NotionのID列（タイトル）からIDを取得
-                    id_list = p.get("id", {}).get("title", [])
-                    qid = id_list[0].get("plain_text", "") if id_list else ""
-                    if not qid: continue
-
-                    prefix = qid.split('-')[0]
-                    section_name = section_map.get(prefix, "その他")
-
-                    # フィルタリング
-                    if selected_sections and section_name not in selected_sections: continue
-                    if mode == "忘却曲線モード" and qid not in due_ids: continue
-
-                    # 辞書キーを db_handler の戻り値に合わせる
-                    qs.append({
-                        "page_id": item.get("id"),
-                        "q_id": qid,
-                        "question": p.get("question", {}).get("rich_text", [{}])[0].get("plain_text", "無題"),
-                        "answer": p.get("answer", {}).get("rich_text", [{}])[0].get("plain_text", "無解答"),
-                        "interval": p.get("interval", {}).get("number", 0) or 0,
-                        "ease_factor": p.get("ease_factor", {}).get("number", 2.5) or 2.5,
-                        "reps": p.get("reps", {}).get("number", 0) or 0
-                    })
-                
-                random.shuffle(qs)
-                st.session_state.questions = qs
-                st.session_state.idx = 0
-                st.session_state.ans = False
-        except Exception as e:
-            st.error(f"データ取得エラー: {e}")
-            return
+        with st.spinner("Notionから取得中..."):
+            all_data = get_notion_data()
+            due_ids = get_due_questions()
+            
+            qs = []
+            for q in all_data:
+                prefix = q['q_id'].split('-')[0]
+                if selected_sections and section_map.get(prefix) not in selected_sections: continue
+                if mode == "忘却曲線モード" and q['q_id'] not in due_ids: continue
+                qs.append(q)
+            
+            random.shuffle(qs)
+            st.session_state.questions = qs
+            st.session_state.idx = 0
+            st.session_state.ans = False
 
     if not st.session_state.questions:
-        st.warning("該当する問題がありません。モードや分野を変えてみてください。")
+        st.warning("該当する問題がありません。")
         return
 
-    # クイズ表示
     q = st.session_state.questions[st.session_state.idx]
     st.info(f"【{mode}】 問題 {st.session_state.idx + 1} / {len(st.session_state.questions)} (ID: {q['q_id']})")
     st.subheader(q["question"])
 
+    # 回答前
     if not st.session_state.ans:
-        if st.button("答えを表示", type="primary"):
-            st.session_state.ans = True
-            st.rerun()
-    else:
-        st.success(f"**正解：** {q['answer']}")
+        # 4択ボタン（空文字を除外して表示）
+        valid_choices = [c for c in q["choices"] if c]
+        selected = st.radio("選択肢を選んでください：", valid_choices, index=None)
         
-        # 10_排煙設備.pdf などの参照表示
-        ref = section_map.get(q['q_id'].split('-')[0], "関連資料")
-        st.caption(f"📚 参照資料: {ref}")
+        if st.button("回答を確定", type="primary"):
+            if selected:
+                st.session_state.user_choice = selected
+                st.session_state.ans = True
+                st.rerun()
+    # 回答後
+    else:
+        is_correct = (st.session_state.user_choice == q["answer"])
+        if is_correct:
+            st.success(f"⭕ 正解！：{q['answer']}")
+        else:
+            st.error(f"❌ 不正解... 正解は：{q['answer']}")
+            st.write(f"あなたの回答：{st.session_state.user_choice}")
+
+        # 画像の表示
+        if q["image_url"]:
+            st.image(q["image_url"], caption="解説図解")
 
         st.divider()
+        st.write("今回の手応え（忘却曲線データを更新）：")
         cols = st.columns(4)
-        for i, label in enumerate(["もう一度", "難しい", "普通", "簡単"]):
-            if cols[i].button(label, key=f"q_btn_{i}"):
+        labels = ["もう一度", "難しい", "普通", "簡単"]
+        for i, label in enumerate(labels):
+            if cols[i].button(label):
                 update_srs_data(q['page_id'], i, q['interval'], q['ease_factor'], q['reps'])
                 st.session_state.idx += 1
                 st.session_state.ans = False
