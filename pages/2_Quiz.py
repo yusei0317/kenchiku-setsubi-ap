@@ -7,7 +7,6 @@ st.set_page_config(page_title="建築設備士クイズ", layout="wide")
 def main():
     st.title("🧠 建築設備士 択一クイズ")
 
-    # サイドバー設定
     st.sidebar.header("⚙️ 設定")
     mode = st.sidebar.radio("学習モード", ["忘却曲線モード", "全問トレーニング"])
     section_map = {"7": "7_配管とポンプ", "8": "8_ダクトと送風機", "10": "10_排煙設備"}
@@ -20,13 +19,14 @@ def main():
         st.session_state.last_cfg = current_cfg
 
     if 'questions' not in st.session_state:
-        all_data = get_notion_data()
-        due_ids = get_due_questions()
-        qs = [q for q in all_data if (not selected_sections or section_map.get(q['q_id'].split('-')[0]) in selected_sections) and (mode == "全問トレーニング" or q['q_id'] in due_ids)]
-        random.shuffle(qs)
-        st.session_state.questions = qs
-        st.session_state.idx = 0
-        st.session_state.ans = False
+        with st.spinner("Notionから最新データを取得中..."):
+            all_data = get_notion_data()
+            due_ids = get_due_questions()
+            qs = [q for q in all_data if (not selected_sections or section_map.get(q['q_id'].split('-')[0]) in selected_sections) and (mode == "全問トレーニング" or q['q_id'] in due_ids)]
+            random.shuffle(qs)
+            st.session_state.questions = qs
+            st.session_state.idx = 0
+            st.session_state.ans = False
 
     if not st.session_state.questions:
         st.warning("対象の問題がありません。")
@@ -39,7 +39,7 @@ def main():
     if not st.session_state.ans:
         choices = [c for c in q["choices"] if c]
         if not choices:
-            st.error("選択肢(choice_1~4)の読み込みに失敗しました。Notionの列名を確認してください。")
+            st.error("選択肢(choice_1~4)の読み込みに失敗しました。")
             return
             
         user_choice = st.radio("選択肢を選んでください：", choices, index=None)
@@ -49,13 +49,11 @@ def main():
                 st.session_state.ans = True
                 st.rerun()
     else:
-        # 正解判定
         if st.session_state.selected == q["answer"]:
             st.success(f"⭕ 正解！：{q['answer']}")
         else:
             st.error(f"❌ 不正解... 正解は：{q['answer']}")
         
-        # --- 画像解説を表示 ---
         if q["image_url"]:
             st.image(q["image_url"], caption="図解・解説画像")
         
@@ -63,7 +61,7 @@ def main():
         st.write("忘却曲線の評価（SRS）を選択してください：")
         cols = st.columns(4)
         for i, label in enumerate(["もう一度", "難しい", "普通", "簡単"]):
-            if cols[i].button(label):
+            if cols[i].button(label, key=f"srs_btn_{i}"):
                 update_srs_data(q['page_id'], i, q['interval'], q['ease_factor'], q['reps'])
                 st.session_state.idx += 1
                 st.session_state.ans = False
