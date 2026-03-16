@@ -18,22 +18,26 @@ def get_notion_data():
     formatted_data = []
     for item in results:
         p = item.get("properties", {})
-        # タイトル（ID）
-        id_prop = p.get("id", {}).get("title", [])
-        qid = id_prop[0].get("plain_text", "") if id_prop else ""
-        if not qid: continue
+        
+        # 安全にテキストを取得する補助関数
+        def get_t(name):
+            prop = p.get(name, {})
+            ptype = prop.get("type")
+            if ptype == "rich_text":
+                return prop.get("rich_text", [{}])[0].get("plain_text", "") if prop.get("rich_text") else ""
+            elif ptype == "title":
+                return prop.get("title", [{}])[0].get("plain_text", "") if prop.get("title") else ""
+            return ""
 
-        # 各プロパティの安全な取得
-        def get_text(prop_name):
-            text_list = p.get(prop_name, {}).get("rich_text", [])
-            return text_list[0].get("plain_text", "") if text_list else ""
+        qid = get_t("id")
+        if not qid: continue
 
         formatted_data.append({
             "page_id": item.get("id"),
             "q_id": qid,
-            "question": get_text("question"),
-            "answer": get_text("answer"),
-            "choices": [get_text("choice1"), get_text("choice2"), get_text("choice3"), get_text("choice4")],
+            "question": get_t("question"),
+            "answer": get_t("answer"),
+            "choices": [get_t("choice1"), get_t("choice2"), get_t("choice3"), get_t("choice4")],
             "image_url": p.get("image_url", {}).get("url", ""),
             "interval": p.get("interval", {}).get("number", 0) or 0,
             "ease_factor": p.get("ease_factor", {}).get("number", 2.5) or 2.5,
