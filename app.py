@@ -1,67 +1,58 @@
 import streamlit as st
-import requests
+from core.db_handler import init_db, get_master_data
 
-# --- 1. アプリの基本設定 ---
-st.set_page_config(page_title="学習アプリ：空調設備", layout="centered")
+# initial_sidebar_state="auto" to allow users to toggle, but visible
+st.set_page_config(page_title="建築設備士学習アプリ", layout="wide", initial_sidebar_state="auto")
 
-# --- 2. Notionからデータを自動取得する魔法の関数 ---
-@st.cache_data(ttl=600) # 10分間データを記憶して動作を軽くする
-def get_notion_data():
-    # 金庫(Secrets)から鍵を取り出す
-    token = st.secrets["notion"]["notion_token"]
-    db_id = st.secrets["notion"]["database_id"]
-    
-    # Notionの裏口（API）を叩く
-    url = f"https://api.notion.com/v1/databases/{db_id}/query"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Notion-Version": "2022-06-28",
-        "Content-Type": "application/json"
+# Stable CSS to fix mobile sidebar
+st.markdown("""
+<style>
+    [data-testid="stHeader"] {
+        z-index: 1000000 !important;
+        background: rgba(255, 255, 255, 0.8) !important;
     }
-    
-    # 空のリクエストを送ってデータを取得
-    response = requests.post(url, headers=headers)
-    if response.status_code != 200:
-        st.error("データの取得に失敗しました。Secretsの鍵が正しいか確認してください。")
-        return []
-    
-    return response.json().get("results", [])
+    .stApp {
+        background-color: #f8f9fa;
+    }
+    .welcome-card {
+        background-color: white;
+        padding: 30px;
+        border-radius: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        margin-top: 20px;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-# --- 3. 画面の作成 ---
-st.title("学習アプリ：空調設備")
-st.info("💡 問題の追加や画像の変更は、すべてNotionから行えます！")
+# Initialize database
+init_db()
 
-# Notionから問題データを引っ張ってくる
-data = get_notion_data()
+def main():
+    st.title("🏗️ 建築設備士学習アプリ")
+    
+    # Help message for mobile
+    st.info("👈 **左上のメニュー (≡ アイコン) から機能を選択してください**")
 
-# データの中身を順番に画面に出す
-for item in data:
-    props = item.get("properties", {})
+    with st.container():
+        st.markdown("""
+        <div class="welcome-card">
+            <h3>📖 はじめに</h3>
+            <p>このアプリは、建築設備士試験の対策を効率化するためのツールです。</p>
+            <ul>
+                <li><strong>ダッシュボード</strong>: 学習進捗と苦手分野を可視化。</li>
+                <li><strong>クイズモード</strong>: 選択肢形式で実戦的な演習。</li>
+                <li><strong>フラッシュカード</strong>: 隙間時間のクイック学習。</li>
+            </ul>
+            <p style='color: #666; font-size: 0.9em;'>※スマホでメニューが見えない場合は、左上の <b>「三」</b> アイコンをタップしてください。</p>
+        </div>
+        """, unsafe_allow_html=True)
     
-    # ① 問題番号（Notionの「id」列から取得）
-    title_prop = props.get("id", {}).get("title", [])
-    q_id = title_prop[0].get("plain_text", "無題") if title_prop else "無題"
-    
-    # ② 問題文（Notionの「question」列から取得）
-    text_prop = props.get("question", {}).get("rich_text", [])
-    q_text = text_prop[0].get("plain_text", "") if text_prop else ""
-    
-    # ③ 画像（Notionの「image」列から取得）
-    img_url = None
-    # ※もしNotion側の画像列の名前を「image」以外（例：「画像」など）にしている場合は、下の "image" を書き換えてください。
-    img_prop = props.get("image", {}).get("files", [])
-    if img_prop:
-        if img_prop[0].get("type") == "file":
-            img_url = img_prop[0].get("file", {}).get("url")
-        elif img_prop[0].get("type") == "external":
-            img_url = img_prop[0].get("external", {}).get("url")
+    # Load and check data
+    df = get_master_data()
+    if df.empty:
+        st.warning("⚠️ `exam_db/1-7_haikantoponpu.csv` が見つからないか、空です。データを配置してください。")
+    else:
+        st.success(f"✅ 現在 {len(df)} 問のデータが読み込まれています。学習を始めましょう！")
 
-    # --- ここから画面へのレイアウト ---
-    st.write("---")
-    st.subheader(f"■ {q_id}")
-    st.write(q_text)
-    
-    # 画像がNotionに入っている問題だけ、図解ボタンを表示する
-    if img_url:
-        with st.expander("図解を見る"):
-            st.image(img_url, use_container_width=True)
+if __name__ == "__main__":
+    main()
