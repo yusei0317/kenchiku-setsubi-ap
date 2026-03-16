@@ -1,18 +1,6 @@
-import streamlit as st
-import requests
-from datetime import datetime, timedelta
-
-def get_headers():
-    return {
-        "Authorization": f"Bearer {st.secrets['notion']['notion_token']}",
-        "Notion-Version": "2022-06-28",
-        "Content-Type": "application/json"
-    }
-
+# get_notion_data 関数内を以下のように強化
 def get_notion_data():
-    db_id = st.secrets["notion"]["database_id"]
-    url = f"https://api.notion.com/v1/databases/{db_id}/query"
-    res = requests.post(url, headers=get_headers())
+    # ...（前段のURL取得等は同じ）
     results = res.json().get("results", [])
     
     formatted_data = []
@@ -22,11 +10,20 @@ def get_notion_data():
         def get_t(name):
             prop = p.get(name, {})
             if not prop: return ""
-            return prop.get("rich_text", [{}])[0].get("plain_text", "") if prop.get("rich_text") else ""
+            ptype = prop.get("type")
+            if ptype == "rich_text":
+                return prop.get("rich_text", [{}])[0].get("plain_text", "").strip() if prop.get("rich_text") else ""
+            elif ptype == "title":
+                return prop.get("title", [{}])[0].get("plain_text", "").strip() if prop.get("title") else ""
+            return ""
 
-        id_prop = p.get("id", {}).get("title", [])
-        qid = id_prop[0].get("plain_text", "") if id_prop else ""
+        qid = get_t("id")
         if not qid: continue
+
+        # 数値データが空（None）の場合のガード
+        def get_n(name, default=0):
+            val = p.get(name, {}).get("number")
+            return val if val is not None else default
 
         formatted_data.append({
             "page_id": item.get("id"),
@@ -34,13 +31,11 @@ def get_notion_data():
             "question": get_t("question"),
             "answer": get_t("answer"),
             "choices": [get_t("choice_1"), get_t("choice_2"), get_t("choice_3"), get_t("choice_4")],
-            # 追加：解説データの取得
             "exps": [get_t("exp_1"), get_t("exp_2"), get_t("exp_3"), get_t("exp_4")],
             "image_url": p.get("image_url", {}).get("url", ""),
-            "interval": p.get("interval", {}).get("number", 0) or 0,
-            "ease_factor": p.get("ease_factor", {}).get("number", 2.5) or 2.5,
-            "reps": p.get("reps", {}).get("number", 0) or 0
+            "interval": get_n("interval", 0),
+            "ease_factor": get_n("ease_factor", 2.5),
+            "reps": get_n("reps", 0),
+            "next_date": p.get("next_date", {}).get("date", {}).get("start", "未学習") if p.get("next_date", {}).get("date") else "未学習"
         })
     return formatted_data
-
-# update_srs_data と get_due_questions は前回のままでOKです
