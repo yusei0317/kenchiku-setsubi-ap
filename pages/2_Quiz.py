@@ -121,17 +121,34 @@ def main():
 
         is_correct = (st.session_state.selected == correct_text)
         
+        # 1. 【正解の判定】
         if is_correct:
             st.success(f"⭕ 正解！ (正解：肢 {ans_raw})")
         else:
             st.error(f"❌ 不正解... (正解：肢 {ans_raw})")
 
-        # 画像表示
+        # 2. 【問題の画像】
         if q["image_url"]:
             st.divider()
             st.image(q["image_url"], use_container_width=True, caption=f"【図解】{q['q_id']}")
 
-        # 解説全表示
+        # 3. 【Notionのmy_memoの内容（編集エリア）】
+        st.divider()
+        st.subheader("🧠 思考の振り返りメモ")
+        memo_key = f"memo_{q['page_id']}"
+        if memo_key not in st.session_state:
+            st.session_state[memo_key] = q.get("my_memo", "")
+        
+        memo_text = st.text_area("気づきや間違えた理由をメモしましょう：", value=st.session_state[memo_key], key=f"ta_{q['page_id']}")
+        
+        if st.button("メモを保存", key=f"save_{q['page_id']}"):
+            with st.spinner("Notionに保存中..."):
+                if update_my_memo(q['page_id'], memo_text):
+                    st.session_state[memo_key] = memo_text
+                    q["my_memo"] = memo_text 
+                    st.toast("メモを保存しました！", icon="✅")
+
+        # 4. 【各肢の詳細解説】
         st.divider()
         st.markdown("### 📝 各肢の詳細解説")
         
@@ -165,7 +182,7 @@ def main():
             </div>
             """, unsafe_allow_html=True)
 
-        # SRSボタン
+        # 5. 【復習タイミング（SRSボタン）】
         st.divider()
         st.markdown("##### 復習タイミングを選択（SRS更新）")
         cols = st.columns(4)
@@ -182,22 +199,6 @@ def main():
                 if memo_key in st.session_state:
                     del st.session_state[memo_key]
                 st.rerun()
-
-        # メモ機能の追加
-        st.divider()
-        st.subheader("🧠 思考の振り返りメモ")
-        memo_key = f"memo_{q['page_id']}"
-        if memo_key not in st.session_state:
-            st.session_state[memo_key] = q.get("my_memo", "")
-        
-        memo_text = st.text_area("気づきや間違えた理由をメモしましょう：", value=st.session_state[memo_key], key=f"ta_{q['page_id']}")
-        
-        if st.button("メモを保存", key=f"save_{q['page_id']}"):
-            with st.spinner("Notionに保存中..."):
-                if update_my_memo(q['page_id'], memo_text):
-                    st.session_state[memo_key] = memo_text
-                    q["my_memo"] = memo_text 
-                    st.toast("メモを保存しました！", icon="✅")
 
 if __name__ == "__main__":
     main()
