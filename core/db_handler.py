@@ -59,7 +59,8 @@ def get_notion_data():
                 "image_url": img_url,
                 "interval": p.get("interval", {}).get("number", 0) or 0,
                 "ease_factor": p.get("ease_factor", {}).get("number", 2.5) or 2.5,
-                "reps": p.get("reps", {}).get("number", 0) or 0
+                "reps": p.get("reps", {}).get("number", 0) or 0,
+                "my_memo": get_t("my_memo")
             })
         return formatted_data
     except Exception as e:
@@ -96,6 +97,29 @@ def update_srs_data(page_id, quality, prev_interval, prev_ease, prev_reps):
         return True
     except Exception as e:
         st.error(f"Notionの更新に失敗しました: {e}")
+        return False
+
+def update_my_memo(page_id, memo_text):
+    url = f"https://api.notion.com/v1/pages/{page_id}"
+    payload = {
+        "properties": {
+            "my_memo": {
+                "rich_text": [
+                    {
+                        "text": {
+                            "content": memo_text
+                        }
+                    }
+                ]
+            }
+        }
+    }
+    try:
+        res = requests.patch(url, headers=get_headers(), json=payload)
+        res.raise_for_status()
+        return True
+    except Exception as e:
+        st.error(f"Notionのメモ更新に失敗しました: {e}")
         return False
 
 # 互換性用のシンプルなSRS更新関数
