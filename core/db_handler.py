@@ -201,9 +201,10 @@ def call_gemini_api(prompt, system_instruction=""):
     try:
         genai.configure(api_key=api_key)
         
-        # 400エラーを防ぐため system_instruction フィールドは使わず、プロンプトに統合
-        full_prompt = f"【指示】\n{system_instruction}\n\n【質問】\n{prompt}" if system_instruction else prompt
+        # 指示内容を冒頭に結合して堅牢なプロンプトを作成
+        full_prompt = f"【指示・役割】\n{system_instruction}\n\n【コンテキスト】\n{prompt}" if system_instruction else prompt
         
+        # モデル名はシンプルに指定
         model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(full_prompt)
         
