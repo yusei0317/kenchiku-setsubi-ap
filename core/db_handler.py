@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 from datetime import datetime, timedelta
 import json
+import google.generativeai as genai
 
 def get_headers():
     return {
@@ -197,34 +198,15 @@ def call_gemini_api(prompt, system_instruction=""):
     if not api_key:
         return "Gemini APIキーが設定されていません。"
     
-    # モデル名をフルパスで指定（404エラー回避のため）
-    model_id = "models/gemini-1.5-flash"
-    # v1beta エンドポイントを使用
-    url = f"https://generativelanguage.googleapis.com/v1beta/{model_id}:generateContent?key={api_key}"
-    headers = {"Content-Type": "application/json"}
-    
-    # system_instruction をプロンプトの冒頭に結合し、フィールドとしての使用を避ける（400エラー対策）
-    # チューターとしての役割を冒頭に強制挿入
-    role_instruction = f"【System Instruction / AI Role】\n{system_instruction}\n\n" if system_instruction else ""
-    full_prompt = f"{role_instruction}【User Question / context】\n{prompt}"
-    
-    payload = {
-        "contents": [
-            {
-                "parts": [{"text": full_prompt}]
-            }
-        ]
-    }
-    
     try:
-        res = requests.post(url, headers=headers, json=payload)
-        if res.status_code != 200:
-            return f"Gemini APIエラー: ステータスコード {res.status_code}\n{res.text}"
+        genai.configure(api_key=api_key)
         
-        data = res.json()
-        if "candidates" in data and len(data["candidates"]) > 0:
-            return data["candidates"][0]["content"]["parts"][0]["text"]
-        else:
-            return "AIからの応答が空でした。"
+        # 400エラーを防ぐため system_instruction フィールドは使わず、プロンプトに統合
+        full_prompt = f"【指示】\n{system_instruction}\n\n【質問】\n{prompt}" if system_instruction else prompt
+        
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content(full_prompt)
+        
+        return response.text
     except Exception as e:
-        return f"Gemini API接続エラー: {e}"
+        return f"Gemini APIエラー: {e}"
