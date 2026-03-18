@@ -197,8 +197,10 @@ def call_gemini_api(prompt, system_instruction=""):
     if not api_key:
         return "Gemini APIキーが設定されていません。"
     
-    # v1beta エンドポイントを使用（安定性のための回避策）
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    # モデル名をフルパスで指定（404エラー回避のため）
+    model_id = "models/gemini-1.5-flash"
+    # v1beta エンドポイントを使用
+    url = f"https://generativelanguage.googleapis.com/v1beta/{model_id}:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
     
     # system_instruction をプロンプトの冒頭に結合し、フィールドとしての使用を避ける（400エラー対策）
