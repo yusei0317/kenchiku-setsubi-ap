@@ -41,14 +41,15 @@ def get_notion_data():
                     return select.get("name", "")
                 return ""
 
-            # 画像URL取得
-            img_url = ""
+            # 画像URLリスト取得（複数の画像に対応）
+            img_urls = []
             img_prop = p.get("image", {})
             if img_prop and img_prop.get("type") == "files":
                 files = img_prop.get("files", [])
-                if files:
-                    file_info = files[0]
-                    img_url = file_info.get("file", {}).get("url") or file_info.get("external", {}).get("url")
+                for file_info in files:
+                    url_val = file_info.get("file", {}).get("url") or file_info.get("external", {}).get("url")
+                    if url_val:
+                        img_urls.append(url_val)
 
             # ID取得
             id_list = p.get("id", {}).get("title", [])
@@ -75,7 +76,7 @@ def get_notion_data():
                 "answer": ans_str,
                 "choices": [get_t("choice_1"), get_t("choice_2"), get_t("choice_3"), get_t("choice_4")],
                 "exps": [get_t("exp_1"), get_t("exp_2"), get_t("exp_3"), get_t("exp_4")],
-                "image_url": img_url,
+                "image_urls": img_urls, # リストとして保持
                 "interval": p.get("interval", {}).get("number", 0) or 0,
                 "ease_factor": p.get("ease_factor", {}).get("number", 2.5) or 2.5,
                 "reps": p.get("reps", {}).get("number", 0) or 0,
@@ -83,7 +84,7 @@ def get_notion_data():
                 "last_answered": last_answered_str,
                 "is_correct": is_correct,
                 "next_date": next_date_str,
-                "section": get_select("section") # セレクト形式のsectionプロパティを取得
+                "section": get_select("section")
             })
         return formatted_data
     except Exception as e:
@@ -209,14 +210,9 @@ def call_gemini_api(prompt, system_instruction=""):
     
     try:
         genai.configure(api_key=api_key)
-        
-        # 指示内容を冒頭に結合して堅牢なプロンプトを作成
         full_prompt = f"【指示・役割】\n{system_instruction}\n\n【コンテキスト】\n{prompt}" if system_instruction else prompt
-        
-        # モデル名はシンプルに指定
         model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(full_prompt)
-        
         return response.text
     except Exception as e:
         return f"Gemini APIエラー: {e}"

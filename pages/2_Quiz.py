@@ -127,10 +127,11 @@ def main():
         else:
             st.error(f"❌ 不正解... (正解：肢 {ans_raw})")
 
-        # 2. 【問題の画像】
-        if q["image_url"]:
-            st.divider()
-            st.image(q["image_url"], use_container_width=True, caption=f"【図解】{q['q_id']}")
+        # 2. 【問題の画像（複数表示対応）】
+        if q.get("image_urls"):
+            for url in q["image_urls"]:
+                st.divider()
+                st.image(url, use_container_width=True, caption=f"【図解】{q['q_id']}")
 
         # 3. 【Notionのmy_memoの内容（編集エリア）】
         st.divider()
