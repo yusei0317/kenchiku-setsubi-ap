@@ -12,6 +12,35 @@ def get_headers():
         "Content-Type": "application/json"
     }
 
+def parse_notion_image_urls(img_prop):
+    """
+    Notionの 'image' (ファイル＆メディア)プロパティから堅牢にURLリストを抽出する
+    """
+    urls = []
+    if not img_prop or img_prop.get("type") != "files":
+        return urls
+    
+    files = img_prop.get("files", [])
+    if not isinstance(files, list):
+        return urls
+
+    for file_info in files:
+        url_val = None
+        # uploaded file
+        if file_info.get("type") == "file":
+            f_obj = file_info.get("file")
+            if f_obj:
+                url_val = f_obj.get("url")
+        # external link
+        elif file_info.get("type") == "external":
+            e_obj = file_info.get("external")
+            if e_obj:
+                url_val = e_obj.get("url")
+        
+        if url_val:
+            urls.append(url_val)
+    return urls
+
 @st.cache_data(ttl=600)
 def get_notion_data():
     try:
@@ -41,15 +70,8 @@ def get_notion_data():
                     return select.get("name", "")
                 return ""
 
-            # 画像URLリスト取得（複数の画像に対応）
-            img_urls = []
-            img_prop = p.get("image", {})
-            if img_prop and img_prop.get("type") == "files":
-                files = img_prop.get("files", [])
-                for file_info in files:
-                    url_val = file_info.get("file", {}).get("url") or file_info.get("external", {}).get("url")
-                    if url_val:
-                        img_urls.append(url_val)
+            # 画像URLリスト取得（堅牢なパース）
+            img_urls = parse_notion_image_urls(p.get("image"))
 
             # ID取得
             id_list = p.get("id", {}).get("title", [])
@@ -76,7 +98,7 @@ def get_notion_data():
                 "answer": ans_str,
                 "choices": [get_t("choice_1"), get_t("choice_2"), get_t("choice_3"), get_t("choice_4")],
                 "exps": [get_t("exp_1"), get_t("exp_2"), get_t("exp_3"), get_t("exp_4")],
-                "image_urls": img_urls, # リストとして保持
+                "image_urls": img_urls,
                 "interval": p.get("interval", {}).get("number", 0) or 0,
                 "ease_factor": p.get("ease_factor", {}).get("number", 2.5) or 2.5,
                 "reps": p.get("reps", {}).get("number", 0) or 0,
@@ -89,6 +111,20 @@ def get_notion_data():
         return formatted_data
     except Exception as e:
         st.error(f"Notionからのデータ取得に失敗しました: {e}")
+        return []
+
+def refresh_notion_images(page_id):
+    """
+    特定のページIDの最新画像URLを取得する（403エラー回避用）
+    """
+    try:
+        url = f"https://api.notion.com/v1/pages/{page_id}"
+        res = requests.get(url, headers=get_headers())
+        res.raise_for_status()
+        properties = res.json().get("properties", {})
+        return parse_notion_image_urls(properties.get("image"))
+    except Exception as e:
+        st.warning(f"画像の再取得に失敗しました: {e}")
         return []
 
 def update_srs_data(page_id, quality, prev_interval, prev_ease, prev_reps, is_correct_input=None):

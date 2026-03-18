@@ -1,6 +1,6 @@
 import streamlit as st
 import random
-from core.db_handler import get_notion_data, update_srs_data, get_due_questions, update_my_memo
+from core.db_handler import get_notion_data, update_srs_data, get_due_questions, update_my_memo, refresh_notion_images
 
 st.set_page_config(page_title="建築設備士 択一クイズ", layout="wide")
 
@@ -19,7 +19,7 @@ st.markdown("""
         background-color: #f8fff9;
     }
     .incorrect-choice {
-        border-left: 10px solid #dc3545;
+        border-left: 5px solid #dc3545;
     }
     .exp-box {
         background-color: #f1f3f5;
@@ -46,6 +46,7 @@ st.markdown("""
         transform: scale(0.98);
         background-color: #f0f2f6;
     }
+    /* Hide the actual radio circle to make it feel like a button list */
     div[data-testid="stRadio"] input {
         display: none;
     }
@@ -66,7 +67,6 @@ def main():
     # セクションリストを動的に作成
     available_sections = sorted(list(set([q['section'] for q in st.session_state.all_notion_data if q.get('section')])))
     
-    # 3. スマホ対応：multiselect ではなくメイン画面に大きく radio または selectbox を配置
     st.subheader("📂 学習する分野を選択")
     section_options = ["全分野"] + available_sections
     selected_section_label = st.selectbox("分野をタップして選択してください：", options=section_options, index=0)
@@ -90,7 +90,6 @@ def main():
                (mode == "全問トレーニング" or q['q_id'] in due_ids)
         ]
         
-        # 2. 安全ガード：該当問題がない場合の処理
         if not qs:
             st.session_state.questions = []
         else:
@@ -128,21 +127,20 @@ def main():
             if user_choice:
                 st.session_state.selected = user_choice
                 st.session_state.ans = True
+                # 解答確定時に最新の画像URLを取得（有効期限切れ 403 回避）
+                with st.spinner("最新の画像を読み込み中..."):
+                    st.session_state.current_image_urls = refresh_notion_images(q['page_id'])
                 st.rerun()
             else:
                 st.warning("選択肢を選んでください。")
     else:
-        # 1. 正解判定のバグ修正：Notion(1-4)とStreamlit(0-3)のインデックス合わせ
+        # 結果フェーズ
         ans_raw = str(q["answer"]).strip()
         correct_idx = int(ans_raw) - 1 if ans_raw.isdigit() else -1
-        
-        # 選択されたテキストが、正解インデックスのテキストと一致するかで判定
         correct_text = q["choices"][correct_idx] if correct_idx >= 0 else None
         is_correct = (st.session_state.selected == correct_text)
 
-        # 4. 【詳細解説】→【正誤判定】→【画像】→【メモ】の順序
-        
-        # --- 1. 詳細解説 ---
+        # 1. 各肢の詳細解説
         st.divider()
         st.markdown("### 📝 各肢の詳細解説")
         for i in range(4):
@@ -172,7 +170,7 @@ def main():
             </div>
             """, unsafe_allow_html=True)
 
-        # --- 2. 正誤判定 ---
+        # 2. 正誤判定
         st.divider()
         if is_correct:
             st.success(f"⭕ 正解！ (正解：肢 {ans_raw})")
@@ -181,13 +179,14 @@ def main():
         
         st.info("💡 さらに詳しく知りたい場合は、サイドバーの「4_AI_Tutor」へ相談してください。")
 
-        # --- 3. 画像 ---
-        if q.get("image_urls"):
-            for url in q["image_urls"]:
+        # 3. 画像（解答フェーズで取得した最新のURLを使用）
+        current_images = st.session_state.get("current_image_urls", [])
+        if current_images:
+            for url in current_images:
                 st.divider()
                 st.image(url, use_container_width=True, caption=f"【図解】{q['q_id']}")
 
-        # --- 4. メモ ---
+        # 4. メモ
         st.divider()
         st.subheader("🧠 思考の振り返りメモ")
         memo_key = f"memo_{q['page_id']}"
@@ -213,9 +212,10 @@ def main():
                 st.session_state.idx += 1
                 st.session_state.ans = False
                 st.session_state.selected = None
-                memo_key = f"memo_{q['page_id']}"
                 if memo_key in st.session_state:
                     del st.session_state[memo_key]
+                if "current_image_urls" in st.session_state:
+                    del st.session_state["current_image_urls"]
                 st.rerun()
 
 if __name__ == "__main__":
