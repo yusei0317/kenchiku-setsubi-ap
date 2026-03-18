@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import pandas as pd
 from datetime import datetime, timedelta
+import json
 
 def get_headers():
     return {
@@ -190,3 +191,30 @@ def get_stats():
     df_history = df_history.rename(columns={'q_id': 'question_id', 'last_answered': 'timestamp'})
     
     return df_status, df_history
+
+def call_gemini_api(prompt, system_instruction=""):
+    api_key = st.secrets.get("gemini", {}).get("api_key")
+    if not api_key:
+        return "Gemini APIキーが設定されていません。"
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    headers = {"Content-Type": "application/json"}
+    
+    payload = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [{"text": prompt}]
+            }
+        ],
+        "system_instruction": {
+            "parts": [{"text": system_instruction}]
+        } if system_instruction else None
+    }
+    
+    try:
+        res = requests.post(url, headers=headers, json=payload)
+        res.raise_for_status()
+        return res.json()["candidates"][0]["content"]["parts"][0]["text"]
+    except Exception as e:
+        return f"Gemini APIエラー: {e}"

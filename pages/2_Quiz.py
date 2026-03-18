@@ -82,6 +82,9 @@ def main():
 
     q = st.session_state.questions[st.session_state.idx]
     
+    # AI Tutor 用に現在の問題情報を保存
+    st.session_state.current_question = q
+
     # Header info
     st.info(f"【{mode}】 {st.session_state.idx + 1} / {len(st.session_state.questions)} (ID: {q['q_id']})")
     
