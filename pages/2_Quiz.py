@@ -4,7 +4,7 @@ from core.db_handler import get_notion_data, update_srs_data, get_due_questions,
 
 st.set_page_config(page_title="建築設備士 択一クイズ", layout="wide")
 
-# Custom CSS for Quiz
+# Custom CSS for Quiz and Mobile Optimization
 st.markdown("""
 <style>
     .choice-container {
@@ -28,6 +28,28 @@ st.markdown("""
         font-size: 0.9em;
         margin-top: 5px;
     }
+    
+    /* Mobile Optimization: Larger radio button targets */
+    div[data-testid="stRadio"] > div {
+        gap: 10px;
+    }
+    div[data-testid="stRadio"] label {
+        background-color: white;
+        padding: 15px 20px !important;
+        border-radius: 12px;
+        border: 1px solid #ddd;
+        width: 100%;
+        margin-bottom: 5px;
+        transition: all 0.2s;
+    }
+    div[data-testid="stRadio"] label:active {
+        transform: scale(0.98);
+        background-color: #f0f2f6;
+    }
+    /* Hide the actual radio circle to make it feel like a button list */
+    div[data-testid="stRadio"] input {
+        display: none;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -44,9 +66,13 @@ def main():
 
     available_sections = sorted(list(set([q['section'] for q in st.session_state.all_notion_data if q.get('section')])))
 
-    st.sidebar.header("⚙️ 学習設定")
+    # サイドバーはモード選択のみ残す
+    st.sidebar.header("⚙️ 学習モード")
     mode = st.sidebar.radio("モード", ["忘却曲線モード", "全問トレーニング"])
-    selected_sections = st.sidebar.multiselect("分野を選択（空で全表示）", options=available_sections)
+
+    # メイン画面に分野選択を移動（解答後は自動で折りたたまれるようExpanderを使用）
+    with st.expander("📂 分野・フィルター設定", expanded=not st.session_state.get('ans', False)):
+        selected_sections = st.multiselect("分野を選択（空で全表示）", options=available_sections)
 
     cfg_key = f"{mode}-{selected_sections}"
     if "last_cfg" not in st.session_state or st.session_state.last_cfg != cfg_key:
@@ -89,9 +115,11 @@ def main():
     st.subheader(q["question"])
 
     if not st.session_state.ans:
+        # 解答フェーズ
         choices = [c for c in q["choices"] if c]
         user_choice = st.radio("選択してください：", choices, index=None, key=f"q_{st.session_state.idx}")
-        if st.button("回答を確定", type="primary"):
+        
+        if st.button("回答を確定", type="primary", use_container_width=True):
             if user_choice:
                 st.session_state.selected = user_choice
                 st.session_state.ans = True
@@ -99,12 +127,13 @@ def main():
             else:
                 st.warning("選択肢を選んでください。")
     else:
+        # 結果フェーズ
         ans_raw = str(q["answer"]).strip()
         correct_idx = int(ans_raw) - 1 if ans_raw.isdigit() else -1
         correct_text = q["choices"][correct_idx] if correct_idx >= 0 else "不明"
         is_correct = (st.session_state.selected == correct_text)
 
-        # A. 【各肢の詳細解説】を最優先（最上部）に表示
+        # 1. 各肢の詳細解説
         st.divider()
         st.markdown("### 📝 各肢の詳細解説")
         for i in range(4):
@@ -134,36 +163,36 @@ def main():
             </div>
             """, unsafe_allow_html=True)
 
-        # B. 【AI Tutor】への誘導
-        st.info("💡 解説を読んでも分からない場合は、サイドバーの「4_AI_Tutor」でAI講師に質問してみましょう。")
+        # 2. AI Tutor
+        st.info("💡 解説を読んでも分からない場合は、サイドバーの「4_AI_Tutor」へ。")
 
-        # C. 【正誤判定】
+        # 3. 正誤判定
         if is_correct:
             st.success(f"⭕ 正解！ (正解：肢 {ans_raw})")
         else:
             st.error(f"❌ 不正解... (正解：肢 {ans_raw})")
 
-        # D. 【問題画像】
+        # 4. 問題画像
         if q.get("image_urls"):
             for url in q["image_urls"]:
                 st.divider()
                 st.image(url, use_container_width=True, caption=f"【図解】{q['q_id']}")
 
-        # E. 【Notionのmy_memoの内容（編集エリア）】
+        # 5. 思考の振り返りメモ
         st.divider()
         st.subheader("🧠 思考の振り返りメモ")
         memo_key = f"memo_{q['page_id']}"
         if memo_key not in st.session_state:
             st.session_state[memo_key] = q.get("my_memo", "")
         memo_text = st.text_area("気づきや間違えた理由をメモしましょう：", value=st.session_state[memo_key], key=f"ta_{q['page_id']}")
-        if st.button("メモを保存", key=f"save_{q['page_id']}"):
+        if st.button("メモを保存", key=f"save_{q['page_id']}", use_container_width=True):
             with st.spinner("Notionに保存中..."):
                 if update_my_memo(q['page_id'], memo_text):
                     st.session_state[memo_key] = memo_text
                     q["my_memo"] = memo_text 
                     st.toast("メモを保存しました！", icon="✅")
 
-        # F. 【復習タイミング（SRSボタン）】
+        # 6. SRSボタン
         st.divider()
         st.markdown("##### 復習タイミングを選択（SRS更新）")
         cols = st.columns(4)
