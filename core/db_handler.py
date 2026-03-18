@@ -197,12 +197,14 @@ def call_gemini_api(prompt, system_instruction=""):
     if not api_key:
         return "Gemini APIキーが設定されていません。"
     
-    # v1 安定版エンドポイントを使用
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
+    # v1beta エンドポイントを使用（安定性のための回避策）
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
     
-    # system_instruction をプロンプトの冒頭に結合して 400 エラーを回避
-    full_prompt = f"System Instruction: {system_instruction}\n\nUser Question: {prompt}" if system_instruction else prompt
+    # system_instruction をプロンプトの冒頭に結合し、フィールドとしての使用を避ける（400エラー対策）
+    # チューターとしての役割を冒頭に強制挿入
+    role_instruction = f"【System Instruction / AI Role】\n{system_instruction}\n\n" if system_instruction else ""
+    full_prompt = f"{role_instruction}【User Question / context】\n{prompt}"
     
     payload = {
         "contents": [
