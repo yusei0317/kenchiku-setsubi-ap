@@ -118,25 +118,6 @@ def main():
             st.divider()
             st.image(q["image_url"], use_container_width=True, caption=f"【図解】{q['q_id']}")
 
-        # メモ機能の追加
-        st.divider()
-        st.subheader("🧠 思考の振り返りメモ")
-        
-        # セッション状態でメモを管理（リロード対策）
-        memo_key = f"memo_{q['page_id']}"
-        if memo_key not in st.session_state:
-            st.session_state[memo_key] = q.get("my_memo", "")
-        
-        memo_text = st.text_area("気づきや間違えた理由をメモしましょう：", value=st.session_state[memo_key], key=f"ta_{q['page_id']}")
-        
-        if st.button("メモを保存", key=f"save_{q['page_id']}"):
-            with st.spinner("Notionに保存中..."):
-                if update_my_memo(q['page_id'], memo_text):
-                    st.session_state[memo_key] = memo_text
-                    # Notionデータ（キャッシュされているもの）も更新して次回復帰時に反映されるようにする
-                    q["my_memo"] = memo_text 
-                    st.toast("メモを保存しました！", icon="✅")
-        
         # 解説全表示
         st.divider()
         st.markdown("### 📝 各肢の詳細解説")
@@ -184,9 +165,30 @@ def main():
                 st.session_state.ans = False
                 st.session_state.selected = None
                 # メモのセッション状態もクリアして次へ
+                memo_key = f"memo_{q['page_id']}"
                 if memo_key in st.session_state:
                     del st.session_state[memo_key]
                 st.rerun()
+
+        # メモ機能の追加（最下部へ移動）
+        st.divider()
+        st.subheader("🧠 思考の振り返りメモ")
+        
+        # セッション状態でメモを管理（リロード対策）
+        memo_key = f"memo_{q['page_id']}"
+        if memo_key not in st.session_state:
+            st.session_state[memo_key] = q.get("my_memo", "")
+        
+        # text_areaの値をセッション状態と同期
+        memo_text = st.text_area("気づきや間違えた理由をメモしましょう：", value=st.session_state[memo_key], key=f"ta_{q['page_id']}")
+        
+        if st.button("メモを保存", key=f"save_{q['page_id']}"):
+            with st.spinner("Notionに保存中..."):
+                if update_my_memo(q['page_id'], memo_text):
+                    st.session_state[memo_key] = memo_text
+                    # Notionデータ（キャッシュされているもの）も更新して次回復帰時に反映されるようにする
+                    q["my_memo"] = memo_text 
+                    st.toast("メモを保存しました！", icon="✅")
 
 if __name__ == "__main__":
     main()
