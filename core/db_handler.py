@@ -32,6 +32,14 @@ def get_notion_data():
                 if r_text:
                     return r_text[0].get("plain_text", "").strip()
                 return ""
+            
+            def get_select(name):
+                prop = p.get(name, {})
+                if not prop: return ""
+                select = prop.get("select")
+                if select:
+                    return select.get("name", "")
+                return ""
 
             # 画像URL取得
             img_url = ""
@@ -74,7 +82,8 @@ def get_notion_data():
                 "my_memo": get_t("my_memo"),
                 "last_answered": last_answered_str,
                 "is_correct": is_correct,
-                "next_date": next_date_str
+                "next_date": next_date_str,
+                "section": get_select("section") # セレクト形式のsectionプロパティを取得
             })
         return formatted_data
     except Exception as e:

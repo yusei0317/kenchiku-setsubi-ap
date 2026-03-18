@@ -34,41 +34,51 @@ st.markdown("""
 def main():
     st.title("🧠 建築設備士 択一クイズ")
 
+    # データの初回ロード（セクション抽出のため）
+    if 'all_notion_data' not in st.session_state:
+        with st.spinner("Notionからデータを読み込み中..."):
+            st.session_state.all_notion_data = get_notion_data()
+
+    if not st.session_state.all_notion_data:
+        st.error("Notionからデータが取得できませんでした。設定を確認してください。")
+        return
+
+    # セクションリストを動的に作成
+    available_sections = sorted(list(set([q['section'] for q in st.session_state.all_notion_data if q.get('section')])))
+
     st.sidebar.header("⚙️ 学習設定")
     mode = st.sidebar.radio("モード", ["忘却曲線モード", "全問トレーニング"])
     
-    # 分野のフィルタリング
-    section_map = {"配管ポンプ": "7_配管とポンプ", "ダクト": "8_ダクトと送風機", "排煙": "10_排煙設備"}
-    selected_sections = st.sidebar.multiselect("分野を選択", options=list(section_map.values()))
+    # 動的なセクション選択
+    selected_sections = st.sidebar.multiselect("分野を選択（空で全表示）", options=available_sections)
 
-    if "last_cfg" not in st.session_state or st.session_state.last_cfg != f"{mode}-{selected_sections}":
+    # 設定変更検知
+    cfg_key = f"{mode}-{selected_sections}"
+    if "last_cfg" not in st.session_state or st.session_state.last_cfg != cfg_key:
         if "questions" in st.session_state: del st.session_state.questions
-        st.session_state.last_cfg = f"{mode}-{selected_sections}"
+        st.session_state.last_cfg = cfg_key
 
     if 'questions' not in st.session_state:
-        with st.spinner("Notionと同期中..."):
-            try:
-                all_data = get_notion_data()
-                if not all_data:
-                    st.error("データが取得できませんでした。Notionの設定を確認してください。")
-                    return
-                
-                due_ids = get_due_questions()
-                
-                # フィルタリング
-                qs = [q for q in all_data if (not selected_sections or any(section in q['q_id'] for section in selected_sections)) and (mode == "全問トレーニング" or q['q_id'] in due_ids)]
-                
-                random.shuffle(qs)
-                st.session_state.questions = qs
-                st.session_state.idx = 0
-                st.session_state.ans = False
-                st.session_state.selected = None
-            except Exception as e:
-                st.error(f"データ取得エラー: {e}")
-                return
+        due_ids = get_due_questions()
+        
+        # フィルタリング
+        qs = [
+            q for q in st.session_state.all_notion_data 
+            if (not selected_sections or q['section'] in selected_sections) and 
+               (mode == "全問トレーニング" or q['q_id'] in due_ids)
+        ]
+        
+        random.shuffle(qs)
+        st.session_state.questions = qs
+        st.session_state.idx = 0
+        st.session_state.ans = False
+        st.session_state.selected = None
 
     if not st.session_state.questions:
         st.warning("該当する問題がありません。")
+        if st.button("全問トレーニングに切り替える"):
+            st.session_state.last_cfg = "" # Reset
+            st.rerun()
         return
 
     if st.session_state.idx >= len(st.session_state.questions):
@@ -163,7 +173,6 @@ def main():
         for i, label in enumerate(labels):
             if cols[i].button(label, key=f"srs_{i}", use_container_width=True):
                 with st.spinner("Notionを更新中..."):
-                    # SRSデータと正誤情報を同時に更新
                     update_srs_data(q['page_id'], i, q['interval'], q['ease_factor'], q['reps'], is_correct_input=is_correct)
                 st.session_state.idx += 1
                 st.session_state.ans = False
@@ -174,23 +183,19 @@ def main():
                     del st.session_state[memo_key]
                 st.rerun()
 
-        # メモ機能の追加（最下部へ移動）
+        # メモ機能の追加
         st.divider()
         st.subheader("🧠 思考の振り返りメモ")
-        
-        # セッション状態でメモを管理（リロード対策）
         memo_key = f"memo_{q['page_id']}"
         if memo_key not in st.session_state:
             st.session_state[memo_key] = q.get("my_memo", "")
         
-        # text_areaの値をセッション状態と同期
         memo_text = st.text_area("気づきや間違えた理由をメモしましょう：", value=st.session_state[memo_key], key=f"ta_{q['page_id']}")
         
         if st.button("メモを保存", key=f"save_{q['page_id']}"):
             with st.spinner("Notionに保存中..."):
                 if update_my_memo(q['page_id'], memo_text):
                     st.session_state[memo_key] = memo_text
-                    # Notionデータ（キャッシュされているもの）も更新して次回復帰時に反映されるようにする
                     q["my_memo"] = memo_text 
                     st.toast("メモを保存しました！", icon="✅")
 
