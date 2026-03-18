@@ -19,7 +19,7 @@ st.markdown("""
         background-color: #f8fff9;
     }
     .incorrect-choice {
-        border-left: 5px solid #dc3545;
+        border-left: 10px solid #dc3545;
     }
     .exp-box {
         background-color: #f1f3f5;
@@ -46,7 +46,6 @@ st.markdown("""
         transform: scale(0.98);
         background-color: #f0f2f6;
     }
-    /* Hide the actual radio circle to make it feel like a button list */
     div[data-testid="stRadio"] input {
         display: none;
     }
@@ -64,15 +63,19 @@ def main():
         st.error("Notionからデータが取得できませんでした。設定を確認してください。")
         return
 
+    # セクションリストを動的に作成
     available_sections = sorted(list(set([q['section'] for q in st.session_state.all_notion_data if q.get('section')])))
-
-    # サイドバーはモード選択のみ残す
+    
+    # 3. スマホ対応：multiselect ではなくメイン画面に大きく radio または selectbox を配置
+    st.subheader("📂 学習する分野を選択")
+    section_options = ["全分野"] + available_sections
+    selected_section_label = st.selectbox("分野をタップして選択してください：", options=section_options, index=0)
+    
     st.sidebar.header("⚙️ 学習モード")
     mode = st.sidebar.radio("モード", ["忘却曲線モード", "全問トレーニング"])
 
-    # メイン画面に分野選択を移動（解答後は自動で折りたたまれるようExpanderを使用）
-    with st.expander("📂 分野・フィルター設定", expanded=not st.session_state.get('ans', False)):
-        selected_sections = st.multiselect("分野を選択（空で全表示）", options=available_sections)
+    # フィルタリング条件の構築
+    selected_sections = [] if selected_section_label == "全分野" else [selected_section_label]
 
     cfg_key = f"{mode}-{selected_sections}"
     if "last_cfg" not in st.session_state or st.session_state.last_cfg != cfg_key:
@@ -86,17 +89,19 @@ def main():
             if (not selected_sections or q['section'] in selected_sections) and 
                (mode == "全問トレーニング" or q['q_id'] in due_ids)
         ]
-        random.shuffle(qs)
-        st.session_state.questions = qs
-        st.session_state.idx = 0
-        st.session_state.ans = False
-        st.session_state.selected = None
+        
+        # 2. 安全ガード：該当問題がない場合の処理
+        if not qs:
+            st.session_state.questions = []
+        else:
+            random.shuffle(qs)
+            st.session_state.questions = qs
+            st.session_state.idx = 0
+            st.session_state.ans = False
+            st.session_state.selected = None
 
     if not st.session_state.questions:
-        st.warning("該当する問題がありません。")
-        if st.button("全問トレーニングに切り替える"):
-            st.session_state.last_cfg = ""
-            st.rerun()
+        st.info("💡 選択された分野には現在回答すべき問題がありません。『全分野』にするか『全問トレーニング』モードをお試しください。")
         return
 
     if st.session_state.idx >= len(st.session_state.questions):
@@ -127,13 +132,17 @@ def main():
             else:
                 st.warning("選択肢を選んでください。")
     else:
-        # 結果フェーズ
+        # 1. 正解判定のバグ修正：Notion(1-4)とStreamlit(0-3)のインデックス合わせ
         ans_raw = str(q["answer"]).strip()
         correct_idx = int(ans_raw) - 1 if ans_raw.isdigit() else -1
-        correct_text = q["choices"][correct_idx] if correct_idx >= 0 else "不明"
+        
+        # 選択されたテキストが、正解インデックスのテキストと一致するかで判定
+        correct_text = q["choices"][correct_idx] if correct_idx >= 0 else None
         is_correct = (st.session_state.selected == correct_text)
 
-        # 1. 各肢の詳細解説
+        # 4. 【詳細解説】→【正誤判定】→【画像】→【メモ】の順序
+        
+        # --- 1. 詳細解説 ---
         st.divider()
         st.markdown("### 📝 各肢の詳細解説")
         for i in range(4):
@@ -163,22 +172,22 @@ def main():
             </div>
             """, unsafe_allow_html=True)
 
-        # 2. AI Tutor
-        st.info("💡 解説を読んでも分からない場合は、サイドバーの「4_AI_Tutor」へ。")
-
-        # 3. 正誤判定
+        # --- 2. 正誤判定 ---
+        st.divider()
         if is_correct:
             st.success(f"⭕ 正解！ (正解：肢 {ans_raw})")
         else:
             st.error(f"❌ 不正解... (正解：肢 {ans_raw})")
+        
+        st.info("💡 さらに詳しく知りたい場合は、サイドバーの「4_AI_Tutor」へ相談してください。")
 
-        # 4. 問題画像
+        # --- 3. 画像 ---
         if q.get("image_urls"):
             for url in q["image_urls"]:
                 st.divider()
                 st.image(url, use_container_width=True, caption=f"【図解】{q['q_id']}")
 
-        # 5. 思考の振り返りメモ
+        # --- 4. メモ ---
         st.divider()
         st.subheader("🧠 思考の振り返りメモ")
         memo_key = f"memo_{q['page_id']}"
@@ -192,7 +201,7 @@ def main():
                     q["my_memo"] = memo_text 
                     st.toast("メモを保存しました！", icon="✅")
 
-        # 6. SRSボタン
+        # SRSボタン
         st.divider()
         st.markdown("##### 復習タイミングを選択（SRS更新）")
         cols = st.columns(4)
