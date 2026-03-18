@@ -197,13 +197,14 @@ def call_gemini_api(prompt, system_instruction=""):
     if not api_key:
         return "Gemini APIキーが設定されていません。"
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    # v1 安定版エンドポイントを使用
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
     
+    # 安定版のシステムインストラクション形式に対応
     payload = {
         "contents": [
             {
-                "role": "user",
                 "parts": [{"text": prompt}]
             }
         ],
@@ -214,7 +215,13 @@ def call_gemini_api(prompt, system_instruction=""):
     
     try:
         res = requests.post(url, headers=headers, json=payload)
-        res.raise_for_status()
-        return res.json()["candidates"][0]["content"]["parts"][0]["text"]
+        if res.status_code != 200:
+            return f"Gemini APIエラー: ステータスコード {res.status_code}\n{res.text}"
+        
+        data = res.json()
+        if "candidates" in data and len(data["candidates"]) > 0:
+            return data["candidates"][0]["content"]["parts"][0]["text"]
+        else:
+            return "AIからの応答が空でした。"
     except Exception as e:
-        return f"Gemini APIエラー: {e}"
+        return f"Gemini API接続エラー: {e}"
