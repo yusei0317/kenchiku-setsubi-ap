@@ -1,81 +1,99 @@
 import streamlit as st
 import pandas as pd
-from core.db_handler import get_notion_data
+import plotly.express as px
+from core.db_handler import get_stats, get_master_data
 
-# ページ設定
 st.set_page_config(page_title="学習履歴", layout="wide")
 
+# Custom CSS for modern UI
+st.markdown("""
+<style>
+    .stTabs [data-baseweb="tab-list"] { gap: 24px; }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: #f0f2f6;
+        border-radius: 4px 4px 0px 0px;
+        padding: 10px;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #007bff !important;
+        color: white !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 def main():
-    st.title("📜 学習履歴・定着ステータス")
-    st.caption("Notionに保存された最新の記憶データを可視化します。")
+    st.title("📊 学習履歴・分析")
+    st.caption("Notionの最新データを基に学習進捗を分析します。")
+    
+    with st.spinner("データを取得中..."):
+        df_status, df_history = get_stats()
+        df_all = get_master_data()
+    
+    if df_status.empty:
+        st.warning("データがありません。クイズを解いて学習を始めてください。")
+        return
 
-    with st.spinner("Notionからデータを取得中..."):
-        try:
-            raw_data = get_notion_data()
-            if not raw_data:
-                st.warning("Notionにデータが見つかりません。")
-                return
-
-            rows = []
-            for item in raw_data:
-                # ページ全体のプロパティを取得
-                p = item.get("properties")
-                if not p:
-                    continue
-                
-                # --- 安全なデータ取得（ガード節） ---
-                
-                # 1. IDの取得
-                id_prop = p.get("id", {}).get("title", [])
-                q_id = id_prop[0].get("plain_text", "No ID") if id_prop else "No ID"
-                
-                # 2. 次回学習日の取得（ここがエラーの原因でした）
-                next_date_prop = p.get("next_date", {})
-                # .get("date") が None を返す場合があるため、明示的にチェック
-                date_content = next_date_prop.get("date") if next_date_prop else None
-                next_date = date_content.get("start") if date_content else "未学習"
-                
-                # 3. 数値データの取得（Noneの場合は0や初期値を設定）
-                interval = p.get("interval", {}).get("number")
-                if interval is None: interval = 0
-                
-                reps = p.get("reps", {}).get("number")
-                if reps is None: reps = 0
-                
-                ease = p.get("ease_factor", {}).get("number")
-                if ease is None: ease = 2.5
-
-                rows.append({
-                    "問題ID": q_id,
-                    "次回学習予定日": next_date,
-                    "定着間隔(日)": int(interval),
-                    "正解回数": int(reps),
-                    "易しさ": round(float(ease), 2)
-                })
+    tab_analysis, tab_history = st.tabs(["進捗分析", "詳細ステータス"])
+    
+    with tab_analysis:
+        col_left, col_right = st.columns(2)
+        
+        with col_left:
+            st.subheader("分野別正答率")
+            # q_id から分野を抽出 (例: 7_1 -> 7_配管とポンプ)
+            section_map = {"7": "7_配管とポンプ", "8": "8_ダクトと送風機", "10": "10_排煙設備"}
             
-            df = pd.DataFrame(rows)
+            # historyが空でない場合のみグラフ表示
+            valid_history = df_history[df_history['timestamp'].notna()].copy()
+            if not valid_history.empty:
+                valid_history['section_code'] = valid_history['question_id'].apply(lambda x: x.split('_')[0])
+                valid_history['section'] = valid_history['section_code'].map(section_map).fillna("その他")
+                
+                section_acc = valid_history.groupby('section')['is_correct'].mean().reset_index()
+                section_acc['is_correct'] *= 100
+                
+                fig_section = px.bar(section_acc, x='section', y='is_correct', 
+                                    labels={'is_correct': '正答率 (%)', 'section': '分野'},
+                                    color='is_correct', color_continuous_scale='RdYlGn',
+                                    range_y=[0, 100])
+                st.plotly_chart(fig_section, use_container_width=True)
+            else:
+                st.info("正答率を表示するための履歴データがまだありません。")
 
-            # 統計表示
-            mastered = len(df[df["定着間隔(日)"] >= 15])
-            st.write(f"### 現在のマスター状況: {mastered} / {len(df)} 問")
-
-            # テーブル表示（次回学習日が近い順、かつ未学習を下に）
-            st.subheader("📋 詳細ステータス")
-            df_sorted = df.sort_values(by="次回学習予定日", ascending=True)
+        with col_right:
+            st.subheader("習得レベル分布")
+            level_counts = df_status['mastery_level'].value_counts().reset_index()
+            level_counts.columns = ['レベル', '問題数']
             
-            # 15日以上を緑色にするスタイル設定
-            def color_interval(val):
-                color = '#e8f5e9' if val >= 15 else 'white'
-                return f'background-color: {color}'
+            fig_level = px.pie(level_counts, values='問題数', names='レベル',
+                              color='レベル',
+                              color_discrete_map={'Mastered':'#28a745', 'Learning':'#ffc107', 'New':'#6c757d'})
+            st.plotly_chart(fig_level, use_container_width=True)
 
-            st.dataframe(
-                df_sorted.style.applymap(color_interval, subset=["定着間隔(日)"]),
-                use_container_width=True
-            )
+    with tab_history:
+        st.subheader("問題別ステータス一覧")
+        # 表示用にカラム名を整える
+        df_display = df_status.copy()
+        df_display = df_display.rename(columns={
+            'q_id': '問題ID',
+            'reps': '正解回数',
+            'interval': '復習間隔(日)',
+            'last_answered': '最終回答日',
+            'is_correct': '直近正解',
+            'mastery_level': '習得状況'
+        })
+        
+        # 最終回答日でソート
+        df_display = df_display.sort_values('最終回答日', ascending=False)
+        
+        def color_status(val):
+            if val == 'Mastered': return 'background-color: #e8f5e9'
+            if val == 'Learning': return 'background-color: #fff9c4'
+            return ''
 
-        except Exception as e:
-            st.error(f"予期せぬエラーが発生しました: {e}")
-            st.info("ヒント: Notionの各列（next_date等）が正しく作成されているか確認してください。")
+        st.dataframe(df_display.style.applymap(color_status, subset=['習得状況']), use_container_width=True)
 
 if __name__ == "__main__":
     main()

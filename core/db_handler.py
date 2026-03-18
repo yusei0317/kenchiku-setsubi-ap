@@ -31,7 +31,7 @@ def get_notion_data():
                     return r_text[0].get("plain_text", "").strip()
                 return ""
 
-            # 画像URL取得（列名: image）
+            # 画像URL取得
             img_url = ""
             img_prop = p.get("image", {})
             if img_prop and img_prop.get("type") == "files":
@@ -40,7 +40,7 @@ def get_notion_data():
                     file_info = files[0]
                     img_url = file_info.get("file", {}).get("url") or file_info.get("external", {}).get("url")
 
-            # ID（タイトル型）
+            # ID取得
             id_list = p.get("id", {}).get("title", [])
             qid = id_list[0].get("plain_text", "").strip() if id_list else ""
             if not qid: continue
@@ -48,6 +48,15 @@ def get_notion_data():
             # answerを数値型として取得し文字列に変換
             ans_num = p.get("answer", {}).get("number")
             ans_str = str(int(ans_num)) if ans_num is not None else ""
+
+            # 履歴系プロパティ
+            last_answered = p.get("last_answered", {}).get("date", {})
+            last_answered_str = last_answered.get("start") if last_answered else None
+            is_correct = p.get("is_correct", {}).get("checkbox", False)
+            
+            # 次回学習日
+            next_date_prop = p.get("next_date", {}).get("date", {})
+            next_date_str = next_date_prop.get("start") if next_date_prop else None
 
             formatted_data.append({
                 "page_id": item.get("id"),
@@ -60,15 +69,17 @@ def get_notion_data():
                 "interval": p.get("interval", {}).get("number", 0) or 0,
                 "ease_factor": p.get("ease_factor", {}).get("number", 2.5) or 2.5,
                 "reps": p.get("reps", {}).get("number", 0) or 0,
-                "my_memo": get_t("my_memo")
+                "my_memo": get_t("my_memo"),
+                "last_answered": last_answered_str,
+                "is_correct": is_correct,
+                "next_date": next_date_str
             })
         return formatted_data
     except Exception as e:
         st.error(f"Notionからのデータ取得に失敗しました: {e}")
         return []
 
-def update_srs_data(page_id, quality, prev_interval, prev_ease, prev_reps):
-    # quality: 0: 再、1: 難しい、2: 普通、3: 簡単
+def update_srs_data(page_id, quality, prev_interval, prev_ease, prev_reps, is_correct_input=None):
     if quality >= 2:
         if prev_reps == 0: new_interval = 1
         elif prev_reps == 1: new_interval = 6
@@ -81,19 +92,27 @@ def update_srs_data(page_id, quality, prev_interval, prev_ease, prev_reps):
         new_ease = max(1.3, prev_ease - 0.2)
     
     new_ease = max(1.3, min(2.5, new_ease))
+    today = datetime.now().strftime('%Y-%m-%d')
     next_date = (datetime.now() + timedelta(days=new_interval)).strftime('%Y-%m-%d')
+    
     url = f"https://api.notion.com/v1/pages/{page_id}"
-    payload = {
-        "properties": {
-            "next_date": {"date": {"start": next_date}},
-            "interval": {"number": float(new_interval)},
-            "ease_factor": {"number": round(float(new_ease), 2)},
-            "reps": {"number": int(new_reps)}
-        }
+    properties = {
+        "next_date": {"date": {"start": next_date}},
+        "interval": {"number": float(new_interval)},
+        "ease_factor": {"number": round(float(new_ease), 2)},
+        "reps": {"number": int(new_reps)},
+        "last_answered": {"date": {"start": today}}
     }
+    
+    if is_correct_input is not None:
+        properties["is_correct"] = {"checkbox": is_correct_input}
+
+    payload = {"properties": properties}
+    
     try:
         res = requests.patch(url, headers=get_headers(), json=payload)
         res.raise_for_status()
+        st.cache_data.clear()
         return True
     except Exception as e:
         st.error(f"Notionの更新に失敗しました: {e}")
@@ -104,25 +123,19 @@ def update_my_memo(page_id, memo_text):
     payload = {
         "properties": {
             "my_memo": {
-                "rich_text": [
-                    {
-                        "text": {
-                            "content": memo_text
-                        }
-                    }
-                ]
+                "rich_text": [{"text": {"content": memo_text}}]
             }
         }
     }
     try:
         res = requests.patch(url, headers=get_headers(), json=payload)
         res.raise_for_status()
+        st.cache_data.clear()
         return True
     except Exception as e:
         st.error(f"Notionのメモ更新に失敗しました: {e}")
         return False
 
-# 互換性用のシンプルなSRS更新関数
 def update_srs(qid, quality):
     data = get_notion_data()
     q = next((item for item in data if item["q_id"] == qid), None)
@@ -155,7 +168,6 @@ def get_due_questions():
     except:
         return []
 
-# Dashboard用の互換性関数
 def get_master_data():
     data = get_notion_data()
     if not data:
@@ -170,7 +182,11 @@ def get_stats():
         return pd.DataFrame(), pd.DataFrame()
     
     df = pd.DataFrame(data)
-    df_status = df[['q_id', 'reps', 'interval']].copy()
+    
+    df_status = df[['q_id', 'reps', 'interval', 'last_answered', 'is_correct', 'next_date']].copy()
     df_status['mastery_level'] = df_status['reps'].apply(lambda x: 'Mastered' if x > 3 else 'Learning' if x > 0 else 'New')
-    df_history = pd.DataFrame(columns=['question_id', 'is_correct', 'timestamp'])
+    
+    df_history = df_status[df_status['last_answered'].notna()].copy()
+    df_history = df_history.rename(columns={'q_id': 'question_id', 'last_answered': 'timestamp'})
+    
     return df_status, df_history

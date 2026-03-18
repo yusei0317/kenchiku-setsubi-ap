@@ -160,7 +160,8 @@ def main():
         for i, label in enumerate(labels):
             if cols[i].button(label, key=f"srs_{i}", use_container_width=True):
                 with st.spinner("Notionを更新中..."):
-                    update_srs_data(q['page_id'], i, q['interval'], q['ease_factor'], q['reps'])
+                    # SRSデータと正誤情報を同時に更新
+                    update_srs_data(q['page_id'], i, q['interval'], q['ease_factor'], q['reps'], is_correct_input=is_correct)
                 st.session_state.idx += 1
                 st.session_state.ans = False
                 st.session_state.selected = None
