@@ -201,16 +201,15 @@ def call_gemini_api(prompt, system_instruction=""):
     url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
     
-    # 安定版のシステムインストラクション形式に対応
+    # system_instruction をプロンプトの冒頭に結合して 400 エラーを回避
+    full_prompt = f"System Instruction: {system_instruction}\n\nUser Question: {prompt}" if system_instruction else prompt
+    
     payload = {
         "contents": [
             {
-                "parts": [{"text": prompt}]
+                "parts": [{"text": full_prompt}]
             }
-        ],
-        "system_instruction": {
-            "parts": [{"text": system_instruction}]
-        } if system_instruction else None
+        ]
     }
     
     try:
