@@ -3,3 +3,6 @@ data/study.db
 __pycache__/
 *.pyc
 .env
+.streamlit/
+secrets.toml
+secrets.toml.txt

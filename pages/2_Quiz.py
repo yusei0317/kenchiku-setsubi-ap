@@ -4,11 +4,40 @@ from core.db_handler import get_notion_data, update_srs_data, get_due_questions
 
 st.set_page_config(page_title="建築設備士 択一クイズ", layout="wide")
 
+# Custom CSS for Quiz
+st.markdown("""
+<style>
+    .choice-container {
+        background-color: white;
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid #e0e0e0;
+        margin-bottom: 10px;
+    }
+    .correct-choice {
+        border-left: 5px solid #28a745;
+        background-color: #f8fff9;
+    }
+    .incorrect-choice {
+        border-left: 5px solid #dc3545;
+    }
+    .exp-box {
+        background-color: #f1f3f5;
+        padding: 10px;
+        border-radius: 5px;
+        font-size: 0.9em;
+        margin-top: 5px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 def main():
     st.title("🧠 建築設備士 択一クイズ")
 
     st.sidebar.header("⚙️ 学習設定")
     mode = st.sidebar.radio("モード", ["忘却曲線モード", "全問トレーニング"])
+    
+    # 分野のフィルタリング
     section_map = {"配管ポンプ": "7_配管とポンプ", "ダクト": "8_ダクトと送風機", "排煙": "10_排煙設備"}
     selected_sections = st.sidebar.multiselect("分野を選択", options=list(section_map.values()))
 
@@ -20,12 +49,20 @@ def main():
         with st.spinner("Notionと同期中..."):
             try:
                 all_data = get_notion_data()
+                if not all_data:
+                    st.error("データが取得できませんでした。Notionの設定を確認してください。")
+                    return
+                
                 due_ids = get_due_questions()
-                qs = [q for q in all_data if (not selected_sections or section_map.get(q['q_id'].split('_')[0]) in selected_sections) and (mode == "全問トレーニング" or q['q_id'] in due_ids)]
+                
+                # フィルタリング
+                qs = [q for q in all_data if (not selected_sections or any(section in q['q_id'] for section in selected_sections)) and (mode == "全問トレーニング" or q['q_id'] in due_ids)]
+                
                 random.shuffle(qs)
                 st.session_state.questions = qs
                 st.session_state.idx = 0
                 st.session_state.ans = False
+                st.session_state.selected = None
             except Exception as e:
                 st.error(f"データ取得エラー: {e}")
                 return
@@ -34,25 +71,44 @@ def main():
         st.warning("該当する問題がありません。")
         return
 
+    if st.session_state.idx >= len(st.session_state.questions):
+        st.balloons()
+        st.success("全てのクイズが完了しました！")
+        if st.button("最初から解き直す"):
+            st.session_state.idx = 0
+            random.shuffle(st.session_state.questions)
+            st.rerun()
+        return
+
     q = st.session_state.questions[st.session_state.idx]
+    
+    # Header info
     st.info(f"【{mode}】 {st.session_state.idx + 1} / {len(st.session_state.questions)} (ID: {q['q_id']})")
+    
+    # Question Stem
     st.subheader(q["question"])
 
     if not st.session_state.ans:
+        # User selection phase
         choices = [c for c in q["choices"] if c]
-        user_choice = st.radio("選択してください：", choices, index=None)
+        user_choice = st.radio("選択してください：", choices, index=None, key=f"q_{st.session_state.idx}")
+        
         if st.button("回答を確定", type="primary"):
             if user_choice:
                 st.session_state.selected = user_choice
                 st.session_state.ans = True
                 st.rerun()
+            else:
+                st.warning("選択肢を選んでください。")
     else:
-        # 結果表示
+        # Result phase
         ans_raw = str(q["answer"]).strip()
         correct_idx = int(ans_raw) - 1 if ans_raw.isdigit() else -1
         correct_text = q["choices"][correct_idx] if correct_idx >= 0 else "不明"
 
-        if st.session_state.selected == correct_text:
+        is_correct = (st.session_state.selected == correct_text)
+        
+        if is_correct:
             st.success(f"⭕ 正解！ (正解：肢 {ans_raw})")
         else:
             st.error(f"❌ 不正解... (正解：肢 {ans_raw})")
@@ -60,27 +116,54 @@ def main():
         # 画像表示
         if q["image_url"]:
             st.divider()
-            st.image(q["image_url"], caption=f"【図解】{q['q_id']}")
+            st.image(q["image_url"], use_container_width=True, caption=f"【図解】{q['q_id']}")
 
         # 解説全表示
-        st.markdown("---")
+        st.divider()
         st.markdown("### 📝 各肢の詳細解説")
+        
         for i in range(4):
-            if not q["choices"][i]: continue
-            label = f"肢 {i+1}"
-            if i == correct_idx: label = f"🎯 {label} (正解)"
-            st.markdown(f"**{label}**")
-            st.write(f"記述: {q['choices'][i]}")
-            st.info(f"解説: {q['exps'][i]}")
-            st.markdown("---")
+            choice_text = q["choices"][i]
+            if not choice_text: continue
+            
+            exp_text = q["exps"][i] if i < len(q["exps"]) else "解説なし"
+            
+            is_this_correct = (i == correct_idx)
+            is_this_selected = (st.session_state.selected == choice_text)
+            
+            # CSS class or styling
+            box_style = "choice-container"
+            if is_this_correct:
+                box_style += " correct-choice"
+                label = f"🎯 肢 {i+1} (正解)"
+            elif is_this_selected:
+                box_style += " incorrect-choice"
+                label = f"❌ 肢 {i+1} (あなたの選択)"
+            else:
+                label = f"肢 {i+1}"
+            
+            st.markdown(f"""
+            <div class="{box_style}">
+                <strong>{label}</strong><br>
+                {choice_text}
+                <div class="exp-box">
+                    <strong>解説:</strong> {exp_text}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
         # SRSボタン
+        st.divider()
+        st.markdown("##### 復習タイミングを選択（SRS更新）")
         cols = st.columns(4)
-        for i, label in enumerate(["もう一度", "難しい", "普通", "簡単"]):
-            if cols[i].button(label, key=f"srs_{i}"):
-                update_srs_data(q['page_id'], i, q['interval'], q['ease_factor'], q['reps'])
+        labels = ["もう一度", "難しい", "普通", "簡単"]
+        for i, label in enumerate(labels):
+            if cols[i].button(label, key=f"srs_{i}", use_container_width=True):
+                with st.spinner("Notionを更新中..."):
+                    update_srs_data(q['page_id'], i, q['interval'], q['ease_factor'], q['reps'])
                 st.session_state.idx += 1
                 st.session_state.ans = False
+                st.session_state.selected = None
                 st.rerun()
 
 if __name__ == "__main__":

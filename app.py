@@ -1,15 +1,18 @@
 import streamlit as st
 from core.db_handler import get_notion_data
 
-# 1. ページ設定（アプリのタイトルとレイアウトを定義）
-st.set_page_config(page_title="建築設備士 SRS学習アプリ", layout="wide")
+# アプリの基本設定
+st.set_page_config(
+    page_title="建築設備士 択一クイズ",
+    page_icon="🧠",
+    layout="wide"
+)
 
 def main():
-    # タイトルとウェルカムメッセージ
-    st.title("🏗️ 建築設備士 合格戦略アプリ")
+    st.title("🏗️ 建築設備士 択一クイズ - 学習ポータル")
     st.write("ようこそ、後藤さん。2026年3月の試験合格に向けて、効率的に知識を定着させましょう。")
 
-    # 2. Notionの接続確認（裏側で静かに実行）
+    # Notionの接続確認
     try:
         data = get_notion_data()
         if data:
