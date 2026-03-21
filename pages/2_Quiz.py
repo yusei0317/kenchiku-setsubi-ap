@@ -116,6 +116,11 @@ def main():
     st.session_state.current_question = q
 
     st.info(f"【{mode}】 {st.session_state.idx + 1} / {len(st.session_state.questions)} (ID: {q['q_id']})")
+    
+    # 試験情報（令和○年など）を表示
+    if q.get("exam_info"):
+        st.caption(f"📅 {q['exam_info']}")
+        
     st.subheader(q["question"])
 
     if not st.session_state.ans:
