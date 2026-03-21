@@ -23,7 +23,7 @@ st.markdown("""
         background-color: #f8fff9;
     }
     .incorrect-choice {
-        border-left: 10px solid #dc3545;
+        border-left: 5px solid #dc3545;
     }
     .exp-box {
         background-color: #f1f3f5;
@@ -72,9 +72,7 @@ def render_exp_with_latex(text):
         return "解説なし"
     
     # 単純な $...$ を $$...$$ に変換してブロック表示を強制する（視認性向上）
-    # すでに $$ が使われている場合はそのまま
     processed_text = re.sub(r'(?<!\$)\$(?!\$)(.*?)\$', r'\n$$\1$$\n', text)
-    
     st.markdown(processed_text)
 
 def main():
@@ -136,28 +134,28 @@ def main():
             random.shuffle(st.session_state.questions)
             st.rerun()
         return
-q = st.session_state.questions[st.session_state.idx]
-st.session_state.current_question = q
 
-# ヘッダー情報のレイアウト
-head_col1, head_col2 = st.columns([2, 1])
+    q = st.session_state.questions[st.session_state.idx]
+    st.session_state.current_question = q
 
-with head_col1:
-    st.info(f"【{mode}】 {st.session_state.idx + 1} / {len(st.session_state.questions)} (ID: {q['q_id']})")
-    if q.get("exam_info"):
-        st.caption(f"📅 {q['exam_info']}")
+    # ヘッダー情報のレイアウト
+    head_col1, head_col2 = st.columns([2, 1])
+    
+    with head_col1:
+        st.info(f"【{mode}】 {st.session_state.idx + 1} / {len(st.session_state.questions)} (ID: {q['q_id']})")
+        if q.get("exam_info"):
+            st.caption(f"📅 {q['exam_info']}")
+            
+    with head_col2:
+        diff = q.get("difficulty", "")
+        if diff == "A":
+            st.markdown('<div style="background-color: #d4edda; color: #155724; padding: 10px; border-radius: 10px; text-align: center; border: 1px solid #c3e6cb; font-weight: bold;">ランクA [初級]</div>', unsafe_allow_html=True)
+        elif diff == "B":
+            st.markdown('<div style="background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 10px; text-align: center; border: 1px solid #ffeeba; font-weight: bold;">ランクB [中級]</div>', unsafe_allow_html=True)
+        elif diff == "C":
+            st.markdown('<div style="background-color: #f8d7da; color: #721c24; padding: 10px; border-radius: 10px; text-align: center; border: 1px solid #f5c6cb; font-weight: bold;">ランクC [上級]</div>', unsafe_allow_html=True)
 
-with head_col2:
-    diff = q.get("difficulty", "")
-    if diff == "A":
-        st.markdown('<div style="background-color: #d4edda; color: #155724; padding: 10px; border-radius: 10px; text-align: center; border: 1px solid #c3e6cb; font-weight: bold;">ランクA [初級]</div>', unsafe_allow_html=True)
-    elif diff == "B":
-        st.markdown('<div style="background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 10px; text-align: center; border: 1px solid #ffeeba; font-weight: bold;">ランクB [中級]</div>', unsafe_allow_html=True)
-    elif diff == "C":
-        st.markdown('<div style="background-color: #f8d7da; color: #721c24; padding: 10px; border-radius: 10px; text-align: center; border: 1px solid #f5c6cb; font-weight: bold;">ランクC [上級]</div>', unsafe_allow_html=True)
-
-st.subheader(q["question"])
-
+    st.subheader(q["question"])
 
     if not st.session_state.ans:
         choices = [c for c in q["choices"] if c]
@@ -207,8 +205,6 @@ st.subheader(q["question"])
                 </div>
             </div>
             """, unsafe_allow_html=True)
-            
-            # 数式レンダリングを考慮した解説表示
             render_exp_with_latex(exp_text)
 
         # 2. 正誤判定
