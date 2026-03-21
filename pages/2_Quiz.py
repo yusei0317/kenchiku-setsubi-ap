@@ -136,16 +136,28 @@ def main():
             random.shuffle(st.session_state.questions)
             st.rerun()
         return
+q = st.session_state.questions[st.session_state.idx]
+st.session_state.current_question = q
 
-    q = st.session_state.questions[st.session_state.idx]
-    st.session_state.current_question = q
+# ヘッダー情報のレイアウト
+head_col1, head_col2 = st.columns([2, 1])
 
+with head_col1:
     st.info(f"【{mode}】 {st.session_state.idx + 1} / {len(st.session_state.questions)} (ID: {q['q_id']})")
-    
     if q.get("exam_info"):
         st.caption(f"📅 {q['exam_info']}")
-        
-    st.subheader(q["question"])
+
+with head_col2:
+    diff = q.get("difficulty", "")
+    if diff == "A":
+        st.markdown('<div style="background-color: #d4edda; color: #155724; padding: 10px; border-radius: 10px; text-align: center; border: 1px solid #c3e6cb; font-weight: bold;">ランクA [初級]</div>', unsafe_allow_html=True)
+    elif diff == "B":
+        st.markdown('<div style="background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 10px; text-align: center; border: 1px solid #ffeeba; font-weight: bold;">ランクB [中級]</div>', unsafe_allow_html=True)
+    elif diff == "C":
+        st.markdown('<div style="background-color: #f8d7da; color: #721c24; padding: 10px; border-radius: 10px; text-align: center; border: 1px solid #f5c6cb; font-weight: bold;">ランクC [上級]</div>', unsafe_allow_html=True)
+
+st.subheader(q["question"])
+
 
     if not st.session_state.ans:
         choices = [c for c in q["choices"] if c]

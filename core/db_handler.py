@@ -107,7 +107,8 @@ def get_notion_data():
                 "is_correct": is_correct,
                 "next_date": next_date_str,
                 "section": get_select("section"),
-                "exam_info": get_t("exam_info") # 令和6年 No.2などの情報
+                "exam_info": get_t("exam_info"), # 令和6年 No.2などの情報
+                "difficulty": get_select("difficulty") # 難易度ランク A, B, C
             })
         return formatted_data
     except Exception as e:
