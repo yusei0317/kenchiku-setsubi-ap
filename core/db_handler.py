@@ -39,7 +39,7 @@ def parse_notion_image_urls(img_prop):
             urls.append(url_val)
     return urls
 
-@st.cache_data(ttl=300) # 10分から5分に短縮して鮮度を上げる
+@st.cache_data(ttl=300)
 def get_notion_data():
     try:
         db_id = st.secrets["notion"]["database_id"]
@@ -77,12 +77,16 @@ def get_notion_data():
             ans_num = p.get("answer", {}).get("number")
             ans_str = str(int(ans_num)) if ans_num is not None else ""
 
+            # 履歴系
             last_answered = p.get("last_answered", {}).get("date", {})
             last_answered_str = last_answered.get("start") if last_answered else None
             is_correct = p.get("is_correct", {}).get("checkbox", False)
             
             next_date_prop = p.get("next_date", {}).get("date", {})
             next_date_str = next_date_prop.get("start") if next_date_prop else None
+
+            # correct_count 取得（Number型）
+            correct_count = p.get("correct_count", {}).get("number", 0) or 0
 
             formatted_data.append({
                 "page_id": item.get("id"),
@@ -95,6 +99,7 @@ def get_notion_data():
                 "interval": p.get("interval", {}).get("number", 0) or 0,
                 "ease_factor": p.get("ease_factor", {}).get("number", 2.5) or 2.5,
                 "reps": p.get("reps", {}).get("number", 0) or 0,
+                "correct_count": int(correct_count),
                 "my_memo": get_t("my_memo"),
                 "last_answered": last_answered_str,
                 "is_correct": is_correct,
@@ -119,15 +124,19 @@ def refresh_notion_images(page_id):
         st.warning(f"画像の再取得に失敗しました: {e}")
         return []
 
-def update_srs_data(page_id, quality, prev_interval, prev_ease, prev_reps, is_correct_input=None):
-    if quality >= 2:
+def update_srs_data(page_id, quality, prev_interval, prev_ease, prev_reps, prev_correct_count=0, is_correct=None):
+    """
+    is_correct 引数を追加し、reps と correct_count を更新する
+    """
+    # SRSロジック (Anki SM-2 準拠)
+    if quality >= 2: # 普通(2), 簡単(3)
         if prev_reps == 0: new_interval = 1
         elif prev_reps == 1: new_interval = 6
         else: new_interval = max(1, round(prev_interval * prev_ease))
         new_reps = prev_reps + 1
         new_ease = prev_ease + (0.1 - (3 - quality) * (0.08 + (3 - quality) * 0.02))
-    else:
-        new_reps = 0
+    else: # もう一度(0), 難しい(1)
+        new_reps = prev_reps + 1
         new_interval = 1
         new_ease = max(1.3, prev_ease - 0.2)
     
@@ -135,18 +144,22 @@ def update_srs_data(page_id, quality, prev_interval, prev_ease, prev_reps, is_co
     today = datetime.now().strftime('%Y-%m-%d')
     next_date = (datetime.now() + timedelta(days=new_interval)).strftime('%Y-%m-%d')
     
+    # 正解数の計算
+    new_correct_count = prev_correct_count
+    if is_correct:
+        new_correct_count += 1
+
     url = f"https://api.notion.com/v1/pages/{page_id}"
     properties = {
         "next_date": {"date": {"start": next_date}},
         "interval": {"number": float(new_interval)},
         "ease_factor": {"number": round(float(new_ease), 2)},
         "reps": {"number": int(new_reps)},
-        "last_answered": {"date": {"start": today}}
+        "correct_count": {"number": int(new_correct_count)},
+        "last_answered": {"date": {"start": today}},
+        "is_correct": {"checkbox": bool(is_correct)}
     }
     
-    if is_correct_input is not None:
-        properties["is_correct"] = {"checkbox": is_correct_input}
-
     payload = {"properties": properties}
     
     try:
@@ -180,7 +193,7 @@ def update_srs(qid, quality):
     data = get_notion_data()
     q = next((item for item in data if item["q_id"] == qid), None)
     if q:
-        return update_srs_data(q['page_id'], quality, q['interval'], q['ease_factor'], q['reps'])
+        return update_srs_data(q['page_id'], quality, q['interval'], q['ease_factor'], q['reps'], q['correct_count'])
     return False
 
 def get_due_questions():

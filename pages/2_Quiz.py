@@ -11,99 +11,122 @@ from core.db_handler import (
 )
 
 # アプリのバージョン
-APP_VERSION = "2026.03.18.v3"
+APP_VERSION = "2026.03.18.v4"
 
 st.set_page_config(page_title="建築設備士 択一クイズ", layout="wide")
 
-# Custom CSS for Quiz and Mobile Optimization
+# デザイン刷新：ライトテーマ & カード型
 st.markdown("""
 <style>
-    .choice-container {
-        background-color: white;
-        padding: 15px;
-        border-radius: 10px;
-        border: 1px solid #e0e0e0;
-        margin-bottom: 10px;
-    }
-    .correct-choice {
-        border-left: 10px solid #28a745;
-        background-color: #f8fff9;
-    }
-    .incorrect-choice {
-        border-left: 5px solid #dc3545;
-    }
-    .exp-box {
-        background-color: #f1f3f5;
-        padding: 10px;
-        border-radius: 5px;
-        font-size: 0.95em;
-        margin-top: 5px;
-        line-height: 1.6;
+    /* 背景色設定 */
+    .stApp {
+        background-color: #F8F9FA;
     }
     
-    div[data-testid="stRadio"] > div {
-        gap: 10px;
-    }
-    div[data-testid="stRadio"] label {
-        background-color: white;
-        padding: 15px 20px !important;
+    /* カード型デザイン */
+    .quiz-card {
+        background-color: #FFFFFF;
+        padding: 25px;
         border-radius: 12px;
-        border: 1px solid #ddd;
-        width: 100%;
-        margin-bottom: 5px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        margin-bottom: 20px;
+        border: 1px solid #E9ECEF;
+    }
+    
+    .choice-card {
+        background-color: #FFFFFF;
+        padding: 15px 20px;
+        border-radius: 10px;
+        border: 1px solid #DEE2E6;
+        margin-bottom: 10px;
         transition: all 0.2s;
     }
-    div[data-testid="stRadio"] label:active {
-        transform: scale(0.98);
-        background-color: #f0f2f6;
-    }
-    div[data-testid="stRadio"] input {
-        display: none;
+    
+    .correct-card {
+        border-left: 6px solid #28A745;
+        background-color: #F4FFF6;
     }
     
-    .version-info {
-        font-size: 0.7em;
-        color: #ccc;
-        text-align: right;
+    .incorrect-card {
+        border-left: 6px solid #DC3545;
+        background-color: #FFF5F5;
+    }
+
+    .exp-inner {
+        font-size: 0.95em;
+        line-height: 1.6;
+        color: #495057;
+        margin-top: 10px;
+        padding: 10px;
+        background-color: #F1F3F5;
+        border-radius: 6px;
+    }
+
+    /* Mobile Radio targets */
+    div[data-testid="stRadio"] > div { gap: 8px; }
+    div[data-testid="stRadio"] label {
+        background-color: white;
+        padding: 18px 25px !important;
+        border-radius: 12px;
+        border: 1px solid #CED4DA;
+        width: 100%;
+        margin-bottom: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    }
+    div[data-testid="stRadio"] input { display: none; }
+
+    .header-info {
+        font-size: 0.9em;
+        color: #6C757D;
+        font-weight: 500;
+    }
+    .stats-badge {
+        font-size: 0.85em;
+        color: #495057;
+        background: #E9ECEF;
+        padding: 4px 12px;
+        border-radius: 20px;
     }
 </style>
 """, unsafe_allow_html=True)
 
 def render_exp_with_latex(text):
     if not text:
-        return "解説なし"
+        return ""
+    # インライン数式をブロック数式に変換して確実に表示
     processed_text = re.sub(r'(?<!\$)\$(?!\$)(.*?)\$', r'\n$$\1$$\n', text)
-    st.markdown(processed_text)
+    return processed_text
 
 def main():
-    st.markdown(f'<p class="version-info">ver {APP_VERSION}</p>', unsafe_allow_html=True)
+    st.sidebar.caption(f"ver {APP_VERSION}")
     st.title("🧠 建築設備士 択一クイズ")
 
-    if st.sidebar.button("🔄 Notionから最新データを取得"):
-        clear_notion_cache()
-        if 'all_notion_data' in st.session_state:
-            del st.session_state.all_notion_data
-        st.rerun()
-
+    # データロード
     if 'all_notion_data' not in st.session_state:
         with st.spinner("Notionからデータを読み込み中..."):
             st.session_state.all_notion_data = get_notion_data()
 
     if not st.session_state.all_notion_data:
-        st.error("Notionからデータが取得できませんでした。設定を確認してください。")
+        st.error("データの読み込みに失敗しました。")
         return
 
+    # セクション取得
     available_sections = sorted(list(set([q['section'] for q in st.session_state.all_notion_data if q.get('section')])))
     
-    st.subheader("📂 学習する分野を選択")
+    st.markdown('<div class="quiz-card">', unsafe_allow_html=True)
+    st.subheader("📂 学習設定")
     section_options = ["全分野"] + available_sections
-    selected_section_label = st.selectbox("分野をタップして選択してください：", options=section_options, index=0)
+    selected_section_label = st.selectbox("分野を選択してください：", options=section_options, index=0)
+    st.markdown('</div>', unsafe_allow_html=True)
     
-    st.sidebar.header("⚙️ 学習モード")
+    st.sidebar.header("⚙️ モード設定")
     mode = st.sidebar.radio("モード", ["忘却曲線モード", "全問トレーニング"])
+    if st.sidebar.button("🔄 データを強制更新"):
+        clear_notion_cache()
+        if 'all_notion_data' in st.session_state: del st.session_state.all_notion_data
+        st.rerun()
 
     selected_sections = [] if selected_section_label == "全分野" else [selected_section_label]
-
     cfg_key = f"{mode}-{selected_sections}"
     if "last_cfg" not in st.session_state or st.session_state.last_cfg != cfg_key:
         if "questions" in st.session_state: del st.session_state.questions
@@ -116,7 +139,6 @@ def main():
             if (not selected_sections or q['section'] in selected_sections) and 
                (mode == "全問トレーニング" or q['q_id'] in due_ids)
         ]
-        
         if not qs:
             st.session_state.questions = []
         else:
@@ -127,13 +149,13 @@ def main():
             st.session_state.selected = None
 
     if not st.session_state.questions:
-        st.info("💡 選択された分野には現在回答すべき問題がありません。『全分野』にするか『全問トレーニング』モードをお試しください。")
+        st.info("💡 該当する問題がありません。全分野・全問トレーニングモードをお試しください。")
         return
 
     if st.session_state.idx >= len(st.session_state.questions):
         st.balloons()
-        st.success("全てのクイズが完了しました！")
-        if st.button("最初から解き直す"):
+        st.success("🎉 全てのクイズが完了しました！")
+        if st.button("もう一度解く"):
             st.session_state.idx = 0
             random.shuffle(st.session_state.questions)
             st.rerun()
@@ -142,33 +164,35 @@ def main():
     q = st.session_state.questions[st.session_state.idx]
     st.session_state.current_question = q
 
-    head_col1, head_col2 = st.columns([2, 1])
-    
-    with head_col1:
-        st.info(f"【{mode}】 {st.session_state.idx + 1} / {len(st.session_state.questions)} (ID: {q['q_id']})")
-        if q.get("exam_info"):
-            st.caption(f"📅 {q['exam_info']}")
-            
-    with head_col2:
-        diff = q.get("difficulty", "")
-        if diff == "A":
-            st.markdown('<div style="background-color: #d4edda; color: #155724; padding: 10px; border-radius: 10px; text-align: center; border: 1px solid #c3e6cb; font-weight: bold;">ランクA [初級]</div>', unsafe_allow_html=True)
-        elif diff == "B":
-            st.markdown('<div style="background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 10px; text-align: center; border: 1px solid #ffeeba; font-weight: bold;">ランクB [中級]</div>', unsafe_allow_html=True)
-        elif diff == "C":
-            st.markdown('<div style="background-color: #f8d7da; color: #721c24; padding: 10px; border-radius: 10px; text-align: center; border: 1px solid #f5c6cb; font-weight: bold;">ランクC [上級]</div>', unsafe_allow_html=True)
+    # ヘッダー情報の整理
+    st.markdown(f"""
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+        <div class="header-info">📅 {q.get('exam_info', '年度不明')} | 🏷️ ランク{q.get('difficulty', '-')}</div>
+        <div class="stats-badge">📈 解答:{q['reps']}回 | 🎯 正答率:{int(q['correct_count']/q['reps']*100) if q['reps']>0 else 0}%</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    st.subheader(q["question"])
+    st.markdown(f'<div class="quiz-card"><h3 style="margin:0;">{q["question"]}</h3></div>', unsafe_allow_html=True)
 
     if not st.session_state.ans:
         choices = [c for c in q["choices"] if c]
-        user_choice = st.radio("選択してください：", choices, index=None, key=f"q_{st.session_state.idx}")
+        user_choice = st.radio("選択肢をタップ：", choices, index=None, key=f"q_{st.session_state.idx}")
         
         if st.button("回答を確定", type="primary", use_container_width=True):
             if user_choice:
                 st.session_state.selected = user_choice
                 st.session_state.ans = True
-                with st.spinner("最新の画像を読み込み中..."):
+                
+                # 即時 SRS 更新
+                ans_raw = str(q["answer"]).strip()
+                correct_idx = int(ans_raw) - 1 if ans_raw.isdigit() else -1
+                correct_text = q["choices"][correct_idx] if correct_idx >= 0 else None
+                is_correct = (user_choice == correct_text)
+                
+                # デフォルトで「普通(2)」として更新（ボタンでさらに上書き可能だが、まず記録）
+                update_srs_data(q['page_id'], 2, q['interval'], q['ease_factor'], q['reps'], q['correct_count'], is_correct)
+                
+                with st.spinner("画像を読み込み中..."):
                     st.session_state.current_image_urls = refresh_notion_images(q['page_id'])
                 st.rerun()
             else:
@@ -179,7 +203,7 @@ def main():
         correct_text = q["choices"][correct_idx] if correct_idx >= 0 else None
         is_correct = (st.session_state.selected == correct_text)
 
-        st.divider()
+        # 1. 各肢の詳細解説
         st.markdown("### 📝 各肢の詳細解説")
         for i in range(4):
             choice_text = q["choices"][i]
@@ -188,69 +212,57 @@ def main():
             is_this_correct = (i == correct_idx)
             is_this_selected = (st.session_state.selected == choice_text)
             
-            box_style = "choice-container"
-            if is_this_correct:
-                box_style += " correct-choice"
-                label = f"🎯 肢 {i+1} (正解)"
-            elif is_this_selected:
-                box_style += " incorrect-choice"
-                label = f"❌ 肢 {i+1} (あなたの選択)"
-            else:
-                label = f"肢 {i+1}"
+            card_class = "choice-card"
+            if is_this_correct: card_class += " correct-card"
+            elif is_this_selected: card_class += " incorrect-card"
+            
+            label = f"肢 {i+1}"
+            if is_this_correct: label = f"🎯 {label} (正解)"
+            elif is_this_selected: label = f"❌ {label} (あなたの選択)"
             
             st.markdown(f"""
-            <div class="{box_style}">
-                <strong>{label}</strong><br>
-                {choice_text}
-                <div class="exp-box">
-                    <strong>解説:</strong>
+            <div class="{card_class}">
+                <strong>{label}</strong><br>{choice_text}
+                <div class="exp-inner">
+                    <strong>解説:</strong><br>{render_exp_with_latex(exp_text)}
                 </div>
             </div>
             """, unsafe_allow_html=True)
-            render_exp_with_latex(exp_text)
 
-        st.divider()
+        # 2. 正誤判定
         if is_correct:
             st.success(f"⭕ 正解！ (正解：肢 {ans_raw})")
         else:
             st.error(f"❌ 不正解... (正解：肢 {ans_raw})")
         
-        st.info("💡 さらに詳しく知りたい場合は、サイドバーの「4_AI_Tutor」へ相談してください。")
-
+        # 3. 画像
         current_images = st.session_state.get("current_image_urls", [])
         if current_images:
             for url in current_images:
-                st.divider()
-                st.image(url, use_container_width=True, caption=f"【図解】{q['q_id']}")
+                st.image(url, use_container_width=True)
 
-        st.divider()
-        st.subheader("🧠 思考の振り返りメモ")
-        memo_key = f"memo_{q['page_id']}"
-        if memo_key not in st.session_state:
-            st.session_state[memo_key] = q.get("my_memo", "")
-        memo_text = st.text_area("気づきや間違えた理由をメモしましょう：", value=st.session_state[memo_key], key=f"ta_{q['page_id']}")
-        if st.button("メモを保存", key=f"save_{q['page_id']}", use_container_width=True):
-            with st.spinner("Notionに保存中..."):
-                if update_my_memo(q['page_id'], memo_text):
-                    st.session_state[memo_key] = memo_text
-                    q["my_memo"] = memo_text 
-                    st.toast("メモを保存しました！", icon="✅")
+        # 4. メモ
+        with st.expander("🧠 思考の振り返りメモ", expanded=False):
+            memo_key = f"memo_{q['page_id']}"
+            if memo_key not in st.session_state: st.session_state[memo_key] = q.get("my_memo", "")
+            memo_text = st.text_area("メモを入力：", value=st.session_state[memo_key], key=f"ta_{q['page_id']}")
+            if st.button("メモを保存", key=f"save_{q['page_id']}", use_container_width=True):
+                update_my_memo(q['page_id'], memo_text)
+                st.toast("保存完了")
 
+        # 5. 次へ (評価ボタン)
         st.divider()
-        st.markdown("##### 復習タイミングを選択（SRS更新）")
+        st.markdown("##### 復習タイミングを選択（SRS）")
         cols = st.columns(4)
-        labels = ["もう一度", "難しい", "普通", "簡単"]
-        for i, label in enumerate(labels):
-            if cols[i].button(label, key=f"srs_{i}", use_container_width=True):
-                with st.spinner("Notionを更新中..."):
-                    update_srs_data(q['page_id'], i, q['interval'], q['ease_factor'], q['reps'], is_correct_input=is_correct)
+        labels = [("もう一度", 0), ("難しい", 1), ("普通", 2), ("簡単", 3)]
+        for i, (label, val) in enumerate(labels):
+            if cols[i].button(label, key=f"srs_{val}", use_container_width=True):
+                # 既に一度 update_srs_data は「確定」時に呼ばれているが、ここでの「評価」に基づいて最終的な次回日程を決定
+                update_srs_data(q['page_id'], val, q['interval'], q['ease_factor'], q['reps'], q['correct_count'], is_correct)
                 st.session_state.idx += 1
                 st.session_state.ans = False
                 st.session_state.selected = None
-                if memo_key in st.session_state:
-                    del st.session_state[memo_key]
-                if "current_image_urls" in st.session_state:
-                    del st.session_state["current_image_urls"]
+                if memo_key in st.session_state: del st.session_state[memo_key]
                 st.rerun()
 
 if __name__ == "__main__":
