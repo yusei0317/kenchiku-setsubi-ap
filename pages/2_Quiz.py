@@ -12,7 +12,7 @@ from core.db_handler import (
 )
 
 # アプリのバージョン
-APP_VERSION = "2026.03.18.v10"
+APP_VERSION = "2026.03.18.v11"
 
 st.set_page_config(page_title="建築設備士 択一クイズ", layout="wide")
 
@@ -59,14 +59,16 @@ st.markdown("""
 
 def clean_latex(text):
     """
-    数式表示をクオリティアップするためのクリーンアップ処理
+    数式表示を一括で正規化する。
+    1. 二重バックスラッシュをシングルに。
+    2. ドル記号の周囲のスペースを調整（LaTeXレンダリング補助）。
     """
     if not text: return ""
-    # バックスラッシュを1本に正規化
+    # バックスラッシュの正規化
     processed = text.replace('\\\\', '\\')
-    # $ の前後の余計なスペースを削除して密着させる
-    processed = processed.replace('$ ', '$').replace(' $', '$')
-    return processed
+    # $...$ を確実に認識させるため、前後にスペースを入れる
+    processed = re.sub(r'(?<!\$)\$(?!\$)(.*?)\$', r' $\1$ ', processed)
+    return processed.strip()
 
 def main():
     st.sidebar.caption(f"ver {APP_VERSION}")
@@ -153,22 +155,26 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
-    # 1. HTMLラップを削除し、境界線付きコンテナ内で問題文を表示
+    # 1. 問題文の表示（正規化を適用し、border付きコンテナ内で表示）
     with st.container(border=True):
-        q_text = clean_latex(q["question"].strip())
+        q_text = clean_latex(q["question"])
         st.markdown(f"### {q_text}")
 
     if not st.session_state.ans:
-        choices = [c for c in q["choices"] if c]
+        # 解答フェーズ：選択肢も正規化して表示
+        choices = [clean_latex(c) for c in q["choices"] if c]
         user_choice = st.radio("選択肢をタップ：", choices, index=None, key=f"q_{st.session_state.idx}")
         
         if st.button("回答を確定", type="primary", use_container_width=True):
             if user_choice:
                 st.session_state.selected = user_choice
                 st.session_state.ans = True
+                
+                # 正誤判定ロジックの堅牢化
                 ans_raw = str(q["answer"]).strip()
                 correct_idx = int(ans_raw) - 1 if ans_raw.isdigit() else -1
-                correct_text = q["choices"][correct_idx] if correct_idx >= 0 else None
+                # 正解テキストも正規化してから比較
+                correct_text = clean_latex(q["choices"][correct_idx]) if correct_idx >= 0 else None
                 is_correct = (user_choice == correct_text)
                 
                 update_srs_data(q['page_id'], 2, q['interval'], q['ease_factor'], q['reps'], q['correct_count'], is_correct, q.get('history', ""))
@@ -178,17 +184,22 @@ def main():
             else:
                 st.warning("選択肢を選んでください。")
     else:
+        # 結果フェーズ
         ans_raw = str(q["answer"]).strip()
         correct_idx = int(ans_raw) - 1 if ans_raw.isdigit() else -1
-        correct_text = q["choices"][correct_idx] if correct_idx >= 0 else None
+        correct_text = clean_latex(q["choices"][correct_idx]) if correct_idx >= 0 else None
         is_correct = (st.session_state.selected == correct_text)
 
+        # 3. 各肢の詳細解説（正規化を適用し HTML ラップを避ける）
         st.markdown("### 📝 各肢の詳細解説")
         for i in range(4):
-            choice_text = q["choices"][i]
-            if not choice_text: continue
-            # 解説文もクリーンアップ
-            exp_text = clean_latex(q["exps"][i].strip() if i < len(q["exps"]) else "")
+            raw_choice = q["choices"][i]
+            if not raw_choice: continue
+            
+            # 正規化
+            choice_text = clean_latex(raw_choice)
+            exp_text = clean_latex(q["exps"][i] if i < len(q["exps"]) else "")
+            
             is_this_correct = (i == correct_idx)
             is_this_selected = (st.session_state.selected == choice_text)
             
@@ -204,11 +215,11 @@ def main():
             <div class="{card_class}">
                 <strong>{label}</strong><br>{choice_text}
                 <div class="exp-inner">
-                    <strong>解説:</strong><br>
+                    <strong>解説:</strong>
                 </div>
             </div>
             """, unsafe_allow_html=True)
-            # LaTeXレンダリングを優先
+            # 解説文を st.markdown で独立させて数式レンダリングを有効化
             st.markdown(exp_text)
 
         if is_correct:
