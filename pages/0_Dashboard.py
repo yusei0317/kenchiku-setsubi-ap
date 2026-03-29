@@ -45,7 +45,11 @@ def main():
     with st.spinner("最新の学習記録を取得中..."):
         all_data = get_notion_data()
         df_status, df_history = get_stats()
-        df_all = get_master_data()
+        
+        # db_handler.py の get_master_data(df) は引数を取るため、生データからDFを作成
+        df_raw = pd.DataFrame(all_data)
+        master_ratio = get_master_data(df_raw)
+        
         total_count = len(all_data)
 
     # 1. Header
@@ -62,11 +66,9 @@ def main():
     st.subheader("📅 学習の足跡")
     
     if not df_history.empty:
-        # ヒートマップ用データの集計
         df_history['timestamp'] = pd.to_datetime(df_history['timestamp'])
         daily_counts = df_history.groupby('timestamp').size().reset_index(name='counts')
         
-        # 過去90日間のカレンダーを生成
         today = datetime.now().date()
         date_range = [today - timedelta(days=i) for i in range(90)]
         date_df = pd.DataFrame({'timestamp': pd.to_datetime(date_range)})
@@ -74,22 +76,18 @@ def main():
         heatmap_data = pd.merge(date_df, daily_counts, on='timestamp', how='left').fillna(0)
         heatmap_data['date_str'] = heatmap_data['timestamp'].dt.strftime('%Y-%m-%d')
         
-        # Plotlyでヒートマップ描画
-        # 週と曜日に変換
-        heatmap_data['week'] = heatmap_data['timestamp'].apply(lambda x: x.isocalendar()[1])
         heatmap_data['weekday'] = heatmap_data['timestamp'].dt.weekday
         
         fig = px.density_heatmap(
             heatmap_data, x="timestamp", y="weekday", z="counts",
-            color_continuous_scale="Viridis", # 青〜緑系
+            color_continuous_scale="Viridis",
             labels={'counts': '回答数', 'weekday': '曜日'},
-            range_z=[0, 10], # 色の濃淡を調整
+            range_z=[0, 10],
             height=200
         )
         fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), coloraxis_showscale=False)
         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
         
-        # 日別詳細の選択
         selected_date = st.select_slider(
             "詳細を表示する日付を選択:",
             options=heatmap_data['date_str'].tolist()[::-1],
@@ -133,12 +131,12 @@ def main():
     # 4. Quick Stats
     st.subheader("📈 クイック統計")
     m_col1, m_col2, m_col3 = st.columns(3)
-    total_q = len(df_all) if not df_all.empty else 1
+    
+    total_q = total_count if total_count > 0 else 1
     started_q = len(df_status[df_status['reps'] > 0]) if not df_status.empty else 0
-    mastered_q = len(df_status[df_status['mastery_level'] == 'Mastered']) if not df_status.empty else 0
 
     with m_col1: st.metric("全体カバー率", f"{int(started_q/total_q*100)}%")
-    with m_col2: st.metric("マスター率", f"{int(mastered_q/total_q*100)}%")
+    with m_col2: st.metric("マスター率", f"{int(master_ratio*100)}%")
     with m_col3:
         acc = int(df_history['is_correct'].mean() * 100) if not df_history.empty else 0
         st.metric("総合正答率", f"{acc}%")
