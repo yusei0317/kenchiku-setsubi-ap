@@ -12,7 +12,7 @@ from core.db_handler import (
 )
 
 # アプリのバージョン
-APP_VERSION = "2026.03.18.v5"
+APP_VERSION = "2026.03.18.v6"
 
 st.set_page_config(page_title="建築設備士 択一クイズ", layout="wide")
 
@@ -57,10 +57,16 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-def render_exp_with_latex(text):
+def format_latex_text(text):
+    """
+    テキスト内のバックスラッシュをエスケープし、$ 記法を LaTeX として正しくレンダリング可能な形式に変換する。
+    """
     if not text: return ""
-    processed_text = re.sub(r'(?<!\$)\$(?!\$)(.*?)\$', r'\n$$\1$$\n', text)
-    return processed_text
+    # バックスラッシュをエスケープ（Streamlit/Markdownの仕様対策）
+    processed = text.replace('\\', '\\\\')
+    # $...$ を検知し、ブロック表示 $$...$$ に変換して視認性を高める（オプション）
+    processed = re.sub(r'(?<!\$)\$(?!\$)(.*?)\$', r'\n$$\1$$\n', processed)
+    return processed
 
 def main():
     st.sidebar.caption(f"ver {APP_VERSION}")
@@ -151,9 +157,11 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown(f'<div class="quiz-card"><h3 style="margin:0;">{q["question"]}</h3></div>', unsafe_allow_html=True)
+    # 問題文の表示（LaTeX対応）
+    st.markdown(f'<div class="quiz-card"><h3 style="margin:0;">{format_latex_text(q["question"])}</h3></div>', unsafe_allow_html=True)
 
     if not st.session_state.ans:
+        # 解答フェーズ
         choices = [c for c in q["choices"] if c]
         user_choice = st.radio("選択肢をタップ：", choices, index=None, key=f"q_{st.session_state.idx}")
         
@@ -168,7 +176,7 @@ def main():
                 correct_text = q["choices"][correct_idx] if correct_idx >= 0 else None
                 is_correct = (user_choice == correct_text)
                 
-                # 解答の瞬間に更新（history を引き継ぐ）
+                # 更新
                 update_srs_data(q['page_id'], 2, q['interval'], q['ease_factor'], q['reps'], q['correct_count'], is_correct, q.get('history', ""))
                 
                 with st.spinner("画像を読み込み中..."):
@@ -177,6 +185,7 @@ def main():
             else:
                 st.warning("選択肢を選んでください。")
     else:
+        # 結果フェーズ
         ans_raw = str(q["answer"]).strip()
         correct_idx = int(ans_raw) - 1 if ans_raw.isdigit() else -1
         correct_text = q["choices"][correct_idx] if correct_idx >= 0 else None
@@ -203,7 +212,7 @@ def main():
             <div class="{card_class}">
                 <strong>{label}</strong><br>{choice_text}
                 <div class="exp-inner">
-                    <strong>解説:</strong><br>{render_exp_with_latex(exp_text)}
+                    <strong>解説:</strong><br>{format_latex_text(exp_text)}
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -232,7 +241,6 @@ def main():
         labels = [("もう一度", 0), ("難しい", 1), ("普通", 2), ("簡単", 3)]
         for i, (label, val) in enumerate(labels):
             if cols[i].button(label, key=f"srs_{val}", use_container_width=True):
-                # 最終的な評価に基づいて次回日程を決定（history を引き継ぐ）
                 update_srs_data(q['page_id'], val, q['interval'], q['ease_factor'], q['reps'], q['correct_count'], is_correct, q.get('history', ""))
                 st.session_state.idx += 1
                 st.session_state.ans = False
