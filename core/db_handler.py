@@ -108,9 +108,6 @@ def get_notion_data():
         st.error(f"Notionからのデータ取得に失敗しました: {e}")
         return []
 
-def clear_notion_cache():
-    st.cache_data.clear()
-
 def refresh_notion_images(page_id):
     try:
         url = f"https://api.notion.com/v1/pages/{page_id}"
@@ -243,3 +240,7 @@ def call_gemini_api(prompt, system_instruction=""):
         return response.text
     except Exception as e:
         return f"Gemini APIエラー: {e}"
+
+def clear_notion_cache():
+    import streamlit as st
+    st.cache_data.clear()
