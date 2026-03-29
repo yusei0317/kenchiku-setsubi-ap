@@ -1,6 +1,7 @@
 import streamlit as st
 import random
 import re
+from datetime import datetime
 from core.db_handler import (
     get_notion_data, 
     update_srs_data, 
@@ -11,19 +12,14 @@ from core.db_handler import (
 )
 
 # アプリのバージョン
-APP_VERSION = "2026.03.18.v4"
+APP_VERSION = "2026.03.18.v5"
 
 st.set_page_config(page_title="建築設備士 択一クイズ", layout="wide")
 
-# デザイン刷新：ライトテーマ & カード型
+# デザイン：ライトテーマ & カード型
 st.markdown("""
 <style>
-    /* 背景色設定 */
-    .stApp {
-        background-color: #F8F9FA;
-    }
-    
-    /* カード型デザイン */
+    .stApp { background-color: #F8F9FA; }
     .quiz-card {
         background-color: #FFFFFF;
         padding: 25px;
@@ -32,7 +28,6 @@ st.markdown("""
         margin-bottom: 20px;
         border: 1px solid #E9ECEF;
     }
-    
     .choice-card {
         background-color: #FFFFFF;
         padding: 15px 20px;
@@ -41,59 +36,29 @@ st.markdown("""
         margin-bottom: 10px;
         transition: all 0.2s;
     }
-    
-    .correct-card {
-        border-left: 6px solid #28A745;
-        background-color: #F4FFF6;
-    }
-    
-    .incorrect-card {
-        border-left: 6px solid #DC3545;
-        background-color: #FFF5F5;
-    }
-
+    .correct-card { border-left: 6px solid #28A745; background-color: #F4FFF6; }
+    .incorrect-card { border-left: 6px solid #DC3545; background-color: #FFF5F5; }
     .exp-inner {
-        font-size: 0.95em;
-        line-height: 1.6;
-        color: #495057;
-        margin-top: 10px;
-        padding: 10px;
-        background-color: #F1F3F5;
-        border-radius: 6px;
+        font-size: 0.95em; line-height: 1.6; color: #495057;
+        margin-top: 10px; padding: 10px; background-color: #F1F3F5; border-radius: 6px;
     }
-
-    /* Mobile Radio targets */
     div[data-testid="stRadio"] > div { gap: 8px; }
     div[data-testid="stRadio"] label {
-        background-color: white;
-        padding: 18px 25px !important;
-        border-radius: 12px;
-        border: 1px solid #CED4DA;
-        width: 100%;
-        margin-bottom: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        background-color: white; padding: 18px 25px !important;
+        border-radius: 12px; border: 1px solid #CED4DA; width: 100%;
+        margin-bottom: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);
     }
     div[data-testid="stRadio"] input { display: none; }
-
-    .header-info {
-        font-size: 0.9em;
-        color: #6C757D;
-        font-weight: 500;
-    }
+    .header-info { font-size: 0.9em; color: #6C757D; font-weight: 500; }
     .stats-badge {
-        font-size: 0.85em;
-        color: #495057;
-        background: #E9ECEF;
-        padding: 4px 12px;
-        border-radius: 20px;
+        font-size: 0.85em; color: #495057; background: #E9ECEF;
+        padding: 4px 12px; border-radius: 20px;
     }
 </style>
 """, unsafe_allow_html=True)
 
 def render_exp_with_latex(text):
-    if not text:
-        return ""
-    # インライン数式をブロック数式に変換して確実に表示
+    if not text: return ""
     processed_text = re.sub(r'(?<!\$)\$(?!\$)(.*?)\$', r'\n$$\1$$\n', text)
     return processed_text
 
@@ -110,34 +75,38 @@ def main():
         st.error("データの読み込みに失敗しました。")
         return
 
+    # 2. 【Anki仕様】忘却曲線モードの実装
+    st.sidebar.header("⚙️ 学習モード")
+    srs_mode = st.sidebar.toggle("🧠 忘却曲線モード（復習優先）", value=True)
+    mode_label = "全問トレーニング" if not srs_mode else "忘却曲線モード"
+
     # セクション取得
     available_sections = sorted(list(set([q['section'] for q in st.session_state.all_notion_data if q.get('section')])))
     
     st.markdown('<div class="quiz-card">', unsafe_allow_html=True)
-    st.subheader("📂 学習設定")
     section_options = ["全分野"] + available_sections
-    selected_section_label = st.selectbox("分野を選択してください：", options=section_options, index=0)
+    selected_section_label = st.selectbox("学習する分野を選択：", options=section_options, index=0)
     st.markdown('</div>', unsafe_allow_html=True)
     
-    st.sidebar.header("⚙️ モード設定")
-    mode = st.sidebar.radio("モード", ["忘却曲線モード", "全問トレーニング"])
     if st.sidebar.button("🔄 データを強制更新"):
         clear_notion_cache()
         if 'all_notion_data' in st.session_state: del st.session_state.all_notion_data
         st.rerun()
 
     selected_sections = [] if selected_section_label == "全分野" else [selected_section_label]
-    cfg_key = f"{mode}-{selected_sections}"
+    cfg_key = f"{mode_label}-{selected_sections}"
+    
     if "last_cfg" not in st.session_state or st.session_state.last_cfg != cfg_key:
         if "questions" in st.session_state: del st.session_state.questions
         st.session_state.last_cfg = cfg_key
 
     if 'questions' not in st.session_state:
-        due_ids = get_due_questions()
+        due_ids = get_due_questions() if srs_mode else []
+        
         qs = [
             q for q in st.session_state.all_notion_data 
             if (not selected_sections or q['section'] in selected_sections) and 
-               (mode == "全問トレーニング" or q['q_id'] in due_ids)
+               (not srs_mode or q['q_id'] in due_ids)
         ]
         if not qs:
             st.session_state.questions = []
@@ -149,13 +118,23 @@ def main():
             st.session_state.selected = None
 
     if not st.session_state.questions:
-        st.info("💡 該当する問題がありません。全分野・全問トレーニングモードをお試しください。")
+        if srs_mode:
+            st.success("🎉 現在、復習が必要な問題はありません！全問トレーニングモードに切り替えて学習を進めましょう。")
+        else:
+            st.info("💡 該当する問題がありません。")
         return
+
+    # 進捗表示
+    remaining = len(st.session_state.questions) - st.session_state.idx
+    if srs_mode:
+        st.write(f"📝 今日の復習対象：残り **{remaining}** 問")
+    else:
+        st.write(f"📝 進行中：**{st.session_state.idx + 1}** / {len(st.session_state.questions)}")
 
     if st.session_state.idx >= len(st.session_state.questions):
         st.balloons()
         st.success("🎉 全てのクイズが完了しました！")
-        if st.button("もう一度解く"):
+        if st.button("もう一度最初から解く"):
             st.session_state.idx = 0
             random.shuffle(st.session_state.questions)
             st.rerun()
@@ -183,13 +162,13 @@ def main():
                 st.session_state.selected = user_choice
                 st.session_state.ans = True
                 
-                # 即時 SRS 更新
+                # 正誤判定
                 ans_raw = str(q["answer"]).strip()
                 correct_idx = int(ans_raw) - 1 if ans_raw.isdigit() else -1
                 correct_text = q["choices"][correct_idx] if correct_idx >= 0 else None
                 is_correct = (user_choice == correct_text)
                 
-                # デフォルトで「普通(2)」として更新（ボタンでさらに上書き可能だが、まず記録）
+                # 3. 【Anki仕様】解答の瞬間に初期 interval=1 で更新
                 update_srs_data(q['page_id'], 2, q['interval'], q['ease_factor'], q['reps'], q['correct_count'], is_correct)
                 
                 with st.spinner("画像を読み込み中..."):
@@ -229,19 +208,16 @@ def main():
             </div>
             """, unsafe_allow_html=True)
 
-        # 2. 正誤判定
         if is_correct:
             st.success(f"⭕ 正解！ (正解：肢 {ans_raw})")
         else:
             st.error(f"❌ 不正解... (正解：肢 {ans_raw})")
         
-        # 3. 画像
         current_images = st.session_state.get("current_image_urls", [])
         if current_images:
             for url in current_images:
                 st.image(url, use_container_width=True)
 
-        # 4. メモ
         with st.expander("🧠 思考の振り返りメモ", expanded=False):
             memo_key = f"memo_{q['page_id']}"
             if memo_key not in st.session_state: st.session_state[memo_key] = q.get("my_memo", "")
@@ -250,14 +226,13 @@ def main():
                 update_my_memo(q['page_id'], memo_text)
                 st.toast("保存完了")
 
-        # 5. 次へ (評価ボタン)
         st.divider()
-        st.markdown("##### 復習タイミングを選択（SRS）")
+        st.markdown("##### 復習タイミングを選択（SRS評価）")
         cols = st.columns(4)
         labels = [("もう一度", 0), ("難しい", 1), ("普通", 2), ("簡単", 3)]
         for i, (label, val) in enumerate(labels):
             if cols[i].button(label, key=f"srs_{val}", use_container_width=True):
-                # 既に一度 update_srs_data は「確定」時に呼ばれているが、ここでの「評価」に基づいて最終的な次回日程を決定
+                # 最終的な評価に基づいて次回日程を決定
                 update_srs_data(q['page_id'], val, q['interval'], q['ease_factor'], q['reps'], q['correct_count'], is_correct)
                 st.session_state.idx += 1
                 st.session_state.ans = False

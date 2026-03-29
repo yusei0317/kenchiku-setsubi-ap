@@ -87,6 +87,9 @@ def get_notion_data():
 
             # correct_count 取得（Number型）
             correct_count = p.get("correct_count", {}).get("number", 0) or 0
+            
+            # interval 取得
+            interval = p.get("interval", {}).get("number", 0) or 0
 
             formatted_data.append({
                 "page_id": item.get("id"),
@@ -96,7 +99,7 @@ def get_notion_data():
                 "choices": [get_t("choice_1"), get_t("choice_2"), get_t("choice_3"), get_t("choice_4")],
                 "exps": [get_t("exp_1"), get_t("exp_2"), get_t("exp_3"), get_t("exp_4")],
                 "image_urls": img_urls,
-                "interval": p.get("interval", {}).get("number", 0) or 0,
+                "interval": int(interval),
                 "ease_factor": p.get("ease_factor", {}).get("number", 2.5) or 2.5,
                 "reps": p.get("reps", {}).get("number", 0) or 0,
                 "correct_count": int(correct_count),
@@ -124,25 +127,38 @@ def refresh_notion_images(page_id):
         st.warning(f"画像の再取得に失敗しました: {e}")
         return []
 
+def calculate_next_review(current_interval, is_correct):
+    """
+    Anki仕様の次回復習間隔計算
+    正解なら 2.5倍、不正解なら 1日にリセット
+    """
+    # 初期値がNoneや0の場合は1とする
+    base_interval = current_interval if current_interval and current_interval > 0 else 1
+    
+    if is_correct:
+        return max(1, round(base_interval * 2.5))
+    else:
+        return 1
+
 def update_srs_data(page_id, quality, prev_interval, prev_ease, prev_reps, prev_correct_count=0, is_correct=None):
     """
-    is_correct 引数を追加し、reps と correct_count を更新する
+    Anki仕様：正解なら interval を伸ばし、不正解なら 1日へ。
+    next_date を算出して Notion を更新する。
     """
-    # SRSロジック (Anki SM-2 準拠)
-    if quality >= 2: # 普通(2), 簡単(3)
-        if prev_reps == 0: new_interval = 1
-        elif prev_reps == 1: new_interval = 6
-        else: new_interval = max(1, round(prev_interval * prev_ease))
-        new_reps = prev_reps + 1
-        new_ease = prev_ease + (0.1 - (3 - quality) * (0.08 + (3 - quality) * 0.02))
-    else: # もう一度(0), 難しい(1)
-        new_reps = prev_reps + 1
-        new_interval = 1
-        new_ease = max(1.3, prev_ease - 0.2)
+    new_reps = prev_reps + 1
     
-    new_ease = max(1.3, min(2.5, new_ease))
+    # 正解・不正解に基づいた間隔の計算
+    new_interval = calculate_next_review(prev_interval, is_correct)
+    
+    # 評価(quality)に応じた微調整（オプション：Ankiの本来の挙動に近い形）
+    # quality: 0:もう一度, 1:難しい, 2:普通, 3:簡単
+    if quality == 3: # 簡単ならさらにもう少し伸ばす
+        new_interval = round(new_interval * 1.2)
+    elif quality <= 1: # 難しい、もう一度なら 1日
+        new_interval = 1
+
     today = datetime.now().strftime('%Y-%m-%d')
-    next_date = (datetime.now() + timedelta(days=new_interval)).strftime('%Y-%m-%d')
+    next_review_date = (datetime.now() + timedelta(days=new_interval)).strftime('%Y-%m-%d')
     
     # 正解数の計算
     new_correct_count = prev_correct_count
@@ -151,9 +167,8 @@ def update_srs_data(page_id, quality, prev_interval, prev_ease, prev_reps, prev_
 
     url = f"https://api.notion.com/v1/pages/{page_id}"
     properties = {
-        "next_date": {"date": {"start": next_date}},
+        "next_date": {"date": {"start": next_review_date}},
         "interval": {"number": float(new_interval)},
-        "ease_factor": {"number": round(float(new_ease), 2)},
         "reps": {"number": int(new_reps)},
         "correct_count": {"number": int(new_correct_count)},
         "last_answered": {"date": {"start": today}},
@@ -193,7 +208,8 @@ def update_srs(qid, quality):
     data = get_notion_data()
     q = next((item for item in data if item["q_id"] == qid), None)
     if q:
-        return update_srs_data(q['page_id'], quality, q['interval'], q['ease_factor'], q['reps'], q['correct_count'])
+        # 簡易互換性用（本来は is_correct を判定すべきだが、quality >= 2 を正解とみなす）
+        return update_srs_data(q['page_id'], quality, q['interval'], q['ease_factor'], q['reps'], q['correct_count'], is_correct=(quality>=2))
     return False
 
 def get_due_questions():
