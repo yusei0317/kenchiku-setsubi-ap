@@ -1,5 +1,6 @@
 import streamlit as st
 import random
+import re
 from datetime import datetime
 from core.db_handler import (
     get_notion_data, 
@@ -11,7 +12,7 @@ from core.db_handler import (
 )
 
 # アプリのバージョン
-APP_VERSION = "2026.03.18.v9"
+APP_VERSION = "2026.03.18.v10"
 
 st.set_page_config(page_title="建築設備士 択一クイズ", layout="wide")
 
@@ -56,20 +57,15 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-def preprocess_latex(text):
+def clean_latex(text):
     """
-    LaTeX レンダリングを確実にするための前処理。
-    1. 二重バックスラッシュをシングルに正規化。
-    2. $ の前後にスペースを挿入。
-    3. Python raw string 的なバックスラッシュエスケープを適用。
+    数式表示をクオリティアップするためのクリーンアップ処理
     """
     if not text: return ""
-    # 二重バックスラッシュを1本に正規化
+    # バックスラッシュを1本に正規化
     processed = text.replace('\\\\', '\\')
-    # $ の前後にスペースを入れ、数式の境界を明示
-    processed = processed.replace('$', ' $ ')
-    # 最終的に Markdown/KaTeX に届くようバックスラッシュをエスケープ
-    processed = processed.replace('\\', r'\\')
+    # $ の前後の余計なスペースを削除して密着させる
+    processed = processed.replace('$ ', '$').replace(' $', '$')
     return processed
 
 def main():
@@ -157,9 +153,10 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
-    # 問題文の表示（前処理を適用）
-    q_text = preprocess_latex(q["question"].strip())
-    st.markdown(f'<div class="quiz-card"><h3 style="margin:0;">{q_text}</h3></div>', unsafe_allow_html=True)
+    # 1. HTMLラップを削除し、境界線付きコンテナ内で問題文を表示
+    with st.container(border=True):
+        q_text = clean_latex(q["question"].strip())
+        st.markdown(f"### {q_text}")
 
     if not st.session_state.ans:
         choices = [c for c in q["choices"] if c]
@@ -190,8 +187,8 @@ def main():
         for i in range(4):
             choice_text = q["choices"][i]
             if not choice_text: continue
-            # 解説文にも前処理を適用
-            exp_text = preprocess_latex(q["exps"][i].strip() if i < len(q["exps"]) else "")
+            # 解説文もクリーンアップ
+            exp_text = clean_latex(q["exps"][i].strip() if i < len(q["exps"]) else "")
             is_this_correct = (i == correct_idx)
             is_this_selected = (st.session_state.selected == choice_text)
             
@@ -211,7 +208,7 @@ def main():
                 </div>
             </div>
             """, unsafe_allow_html=True)
-            # 処理後のテキストを表示
+            # LaTeXレンダリングを優先
             st.markdown(exp_text)
 
         if is_correct:
