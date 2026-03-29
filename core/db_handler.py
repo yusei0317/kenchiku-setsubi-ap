@@ -26,12 +26,10 @@ def parse_notion_image_urls(img_prop):
 
     for file_info in files:
         url_val = None
-        # uploaded file
         if file_info.get("type") == "file":
             f_obj = file_info.get("file")
             if f_obj:
                 url_val = f_obj.get("url")
-        # external link
         elif file_info.get("type") == "external":
             e_obj = file_info.get("external")
             if e_obj:
@@ -41,7 +39,7 @@ def parse_notion_image_urls(img_prop):
             urls.append(url_val)
     return urls
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=300) # 10分から5分に短縮して鮮度を上げる
 def get_notion_data():
     try:
         db_id = st.secrets["notion"]["database_id"]
@@ -70,24 +68,19 @@ def get_notion_data():
                     return select.get("name", "")
                 return ""
 
-            # 画像URLリスト取得（堅牢なパース）
             img_urls = parse_notion_image_urls(p.get("image"))
 
-            # ID取得
             id_list = p.get("id", {}).get("title", [])
             qid = id_list[0].get("plain_text", "").strip() if id_list else ""
             if not qid: continue
 
-            # answerを数値型として取得し文字列に変換
             ans_num = p.get("answer", {}).get("number")
             ans_str = str(int(ans_num)) if ans_num is not None else ""
 
-            # 履歴系プロパティ
             last_answered = p.get("last_answered", {}).get("date", {})
             last_answered_str = last_answered.get("start") if last_answered else None
             is_correct = p.get("is_correct", {}).get("checkbox", False)
             
-            # 次回学習日
             next_date_prop = p.get("next_date", {}).get("date", {})
             next_date_str = next_date_prop.get("start") if next_date_prop else None
 
@@ -107,18 +100,18 @@ def get_notion_data():
                 "is_correct": is_correct,
                 "next_date": next_date_str,
                 "section": get_select("section"),
-                "exam_info": get_t("exam_info"), # 令和6年 No.2などの情報
-                "difficulty": get_select("difficulty") # 難易度ランク A, B, C
+                "exam_info": get_t("exam_info"),
+                "difficulty": get_select("difficulty")
             })
         return formatted_data
     except Exception as e:
         st.error(f"Notionからのデータ取得に失敗しました: {e}")
         return []
 
+def clear_notion_cache():
+    st.cache_data.clear()
+
 def refresh_notion_images(page_id):
-    """
-    特定のページIDの最新画像URLを取得する（403エラー回避用）
-    """
     try:
         url = f"https://api.notion.com/v1/pages/{page_id}"
         res = requests.get(url, headers=get_headers())
@@ -162,7 +155,7 @@ def update_srs_data(page_id, quality, prev_interval, prev_ease, prev_reps, is_co
     try:
         res = requests.patch(url, headers=get_headers(), json=payload)
         res.raise_for_status()
-        st.cache_data.clear()
+        clear_notion_cache()
         return True
     except Exception as e:
         st.error(f"Notionの更新に失敗しました: {e}")
@@ -180,7 +173,7 @@ def update_my_memo(page_id, memo_text):
     try:
         res = requests.patch(url, headers=get_headers(), json=payload)
         res.raise_for_status()
-        st.cache_data.clear()
+        clear_notion_cache()
         return True
     except Exception as e:
         st.error(f"Notionのメモ更新に失敗しました: {e}")
@@ -232,20 +225,16 @@ def get_stats():
         return pd.DataFrame(), pd.DataFrame()
     
     df = pd.DataFrame(data)
-    
     df_status = df[['q_id', 'reps', 'interval', 'last_answered', 'is_correct', 'next_date']].copy()
     df_status['mastery_level'] = df_status['reps'].apply(lambda x: 'Mastered' if x > 3 else 'Learning' if x > 0 else 'New')
-    
     df_history = df_status[df_status['last_answered'].notna()].copy()
     df_history = df_history.rename(columns={'q_id': 'question_id', 'last_answered': 'timestamp'})
-    
     return df_status, df_history
 
 def call_gemini_api(prompt, system_instruction=""):
     api_key = st.secrets.get("gemini", {}).get("api_key")
     if not api_key:
         return "Gemini APIキーが設定されていません。"
-    
     try:
         genai.configure(api_key=api_key)
         full_prompt = f"【指示・役割】\n{system_instruction}\n\n【コンテキスト】\n{prompt}" if system_instruction else prompt

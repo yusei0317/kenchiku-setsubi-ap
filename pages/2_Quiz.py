@@ -1,10 +1,10 @@
 import streamlit as st
 import random
 import re
-from core.db_handler import get_notion_data, update_srs_data, get_due_questions, update_my_memo, refresh_notion_images
+from core.db_handler import get_notion_data, update_srs_data, get_due_questions, update_my_memo, refresh_notion_images, clear_notion_cache
 
 # アプリのバージョン（キャッシュ更新を促すため）
-APP_VERSION = "2026.03.18.v2"
+APP_VERSION = "2026.03.18.v3"
 
 st.set_page_config(page_title="建築設備士 択一クイズ", layout="wide")
 
@@ -66,12 +66,9 @@ st.markdown("""
 def render_exp_with_latex(text):
     """
     解説文中の $ ... $ を検知し、数式として確実にレンダリングする。
-    インラインで崩れる可能性を考慮し、数式部分は $$ ... $$ に変換して強調表示を試みる。
     """
     if not text:
         return "解説なし"
-    
-    # 単純な $...$ を $$...$$ に変換してブロック表示を強制する（視認性向上）
     processed_text = re.sub(r'(?<!\$)\$(?!\$)(.*?)\$', r'\n$$\1$$\n', text)
     st.markdown(processed_text)
 
@@ -81,6 +78,13 @@ def main():
     
     st.title("🧠 建築設備士 択一クイズ")
 
+    # サイドバーに手動更新ボタンを追加
+    if st.sidebar.button("🔄 Notionから最新データを取得"):
+        clear_notion_cache()
+        if 'all_notion_data' in st.session_state:
+            del st.session_state.all_notion_data
+        st.rerun()
+
     if 'all_notion_data' not in st.session_state:
         with st.spinner("Notionからデータを読み込み中..."):
             st.session_state.all_notion_data = get_notion_data()
@@ -89,6 +93,7 @@ def main():
         st.error("Notionからデータが取得できませんでした。設定を確認してください。")
         return
 
+    # セクションリストを動的に作成
     available_sections = sorted(list(set([q['section'] for q in st.session_state.all_notion_data if q.get('section')])))
     
     st.subheader("📂 学習する分野を選択")
