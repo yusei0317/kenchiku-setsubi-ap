@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from core.db_handler import get_stats, get_master_data
+from core.db_handler import get_stats, get_master_data, get_notion_data
 
 st.set_page_config(page_title="学習履歴", layout="wide")
 
@@ -29,7 +29,10 @@ def main():
     
     with st.spinner("データを取得中..."):
         df_status, df_history = get_stats()
-        df_all = get_master_data()
+        # rawデータを取得し、DataFrameに変換して渡す
+        raw_data = get_notion_data()
+        df_raw = pd.DataFrame(raw_data)
+        df_all = get_master_data(df_raw)
     
     if df_status.empty:
         st.warning("データがありません。クイズを解いて学習を始めてください。")
