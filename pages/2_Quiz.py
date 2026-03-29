@@ -1,6 +1,5 @@
 import streamlit as st
 import random
-import re
 from datetime import datetime
 from core.db_handler import (
     get_notion_data, 
@@ -12,7 +11,7 @@ from core.db_handler import (
 )
 
 # アプリのバージョン
-APP_VERSION = "2026.03.18.v6"
+APP_VERSION = "2026.03.18.v7"
 
 st.set_page_config(page_title="建築設備士 択一クイズ", layout="wide")
 
@@ -57,17 +56,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-def format_latex_text(text):
-    """
-    テキスト内のバックスラッシュをエスケープし、$ 記法を LaTeX として正しくレンダリング可能な形式に変換する。
-    """
-    if not text: return ""
-    # バックスラッシュをエスケープ（Streamlit/Markdownの仕様対策）
-    processed = text.replace('\\', '\\\\')
-    # $...$ を検知し、ブロック表示 $$...$$ に変換して視認性を高める（オプション）
-    processed = re.sub(r'(?<!\$)\$(?!\$)(.*?)\$', r'\n$$\1$$\n', processed)
-    return processed
-
 def main():
     st.sidebar.caption(f"ver {APP_VERSION}")
     st.title("🧠 建築設備士 択一クイズ")
@@ -81,12 +69,11 @@ def main():
         st.error("データの読み込みに失敗しました。")
         return
 
-    # 忘却曲線モードの実装
+    # 忘却曲線モード
     st.sidebar.header("⚙️ 学習モード")
     srs_mode = st.sidebar.toggle("🧠 忘却曲線モード（復習優先）", value=True)
     mode_label = "全問トレーニング" if not srs_mode else "忘却曲線モード"
 
-    # セクション取得
     available_sections = sorted(list(set([q['section'] for q in st.session_state.all_notion_data if q.get('section')])))
     
     st.markdown('<div class="quiz-card">', unsafe_allow_html=True)
@@ -108,7 +95,6 @@ def main():
 
     if 'questions' not in st.session_state:
         due_ids = get_due_questions() if srs_mode else []
-        
         qs = [
             q for q in st.session_state.all_notion_data 
             if (not selected_sections or q['section'] in selected_sections) and 
@@ -125,12 +111,11 @@ def main():
 
     if not st.session_state.questions:
         if srs_mode:
-            st.success("🎉 現在、復習が必要な問題はありません！全問トレーニングモードに切り替えて学習を進めましょう。")
+            st.success("🎉 現在、復習が必要な問題はありません！")
         else:
             st.info("💡 該当する問題がありません。")
         return
 
-    # 進捗表示
     remaining = len(st.session_state.questions) - st.session_state.idx
     if srs_mode:
         st.write(f"📝 今日の復習対象：残り **{remaining}** 問")
@@ -140,7 +125,7 @@ def main():
     if st.session_state.idx >= len(st.session_state.questions):
         st.balloons()
         st.success("🎉 全てのクイズが完了しました！")
-        if st.button("もう一度最初から解く"):
+        if st.button("最初から解く"):
             st.session_state.idx = 0
             random.shuffle(st.session_state.questions)
             st.rerun()
@@ -149,7 +134,6 @@ def main():
     q = st.session_state.questions[st.session_state.idx]
     st.session_state.current_question = q
 
-    # ヘッダー情報の整理
     st.markdown(f"""
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
         <div class="header-info">📅 {q.get('exam_info', '年度不明')} | 🏷️ ランク{q.get('difficulty', '-')}</div>
@@ -157,11 +141,11 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
-    # 問題文の表示（LaTeX対応）
-    st.markdown(f'<div class="quiz-card"><h3 style="margin:0;">{format_latex_text(q["question"])}</h3></div>', unsafe_allow_html=True)
+    # 問題文の表示（そのまま渡す）
+    q_text = q["question"].strip()
+    st.markdown(f'<div class="quiz-card"><h3 style="margin:0;">{q_text}</h3></div>', unsafe_allow_html=True)
 
     if not st.session_state.ans:
-        # 解答フェーズ
         choices = [c for c in q["choices"] if c]
         user_choice = st.radio("選択肢をタップ：", choices, index=None, key=f"q_{st.session_state.idx}")
         
@@ -169,29 +153,23 @@ def main():
             if user_choice:
                 st.session_state.selected = user_choice
                 st.session_state.ans = True
-                
-                # 正誤判定
                 ans_raw = str(q["answer"]).strip()
                 correct_idx = int(ans_raw) - 1 if ans_raw.isdigit() else -1
                 correct_text = q["choices"][correct_idx] if correct_idx >= 0 else None
                 is_correct = (user_choice == correct_text)
                 
-                # 更新
                 update_srs_data(q['page_id'], 2, q['interval'], q['ease_factor'], q['reps'], q['correct_count'], is_correct, q.get('history', ""))
-                
                 with st.spinner("画像を読み込み中..."):
                     st.session_state.current_image_urls = refresh_notion_images(q['page_id'])
                 st.rerun()
             else:
                 st.warning("選択肢を選んでください。")
     else:
-        # 結果フェーズ
         ans_raw = str(q["answer"]).strip()
         correct_idx = int(ans_raw) - 1 if ans_raw.isdigit() else -1
         correct_text = q["choices"][correct_idx] if correct_idx >= 0 else None
         is_correct = (st.session_state.selected == correct_text)
 
-        # 各肢の詳細解説
         st.markdown("### 📝 各肢の詳細解説")
         for i in range(4):
             choice_text = q["choices"][i]
@@ -212,10 +190,12 @@ def main():
             <div class="{card_class}">
                 <strong>{label}</strong><br>{choice_text}
                 <div class="exp-inner">
-                    <strong>解説:</strong><br>{format_latex_text(exp_text)}
+                    <strong>解説:</strong><br>
                 </div>
             </div>
             """, unsafe_allow_html=True)
+            # 解説文をそのまま渡す
+            st.markdown(exp_text.strip())
 
         if is_correct:
             st.success(f"⭕ 正解！ (正解：肢 {ans_raw})")
