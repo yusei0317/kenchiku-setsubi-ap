@@ -1,9 +1,16 @@
 import streamlit as st
 import random
 import re
-from core.db_handler import get_notion_data, update_srs_data, get_due_questions, update_my_memo, refresh_notion_images, clear_notion_cache
+from core.db_handler import (
+    get_notion_data, 
+    update_srs_data, 
+    get_due_questions, 
+    update_my_memo, 
+    refresh_notion_images, 
+    clear_notion_cache
+)
 
-# アプリのバージョン（キャッシュ更新を促すため）
+# アプリのバージョン
 APP_VERSION = "2026.03.18.v3"
 
 st.set_page_config(page_title="建築設備士 択一クイズ", layout="wide")
@@ -34,7 +41,6 @@ st.markdown("""
         line-height: 1.6;
     }
     
-    /* Mobile Optimization: Larger radio button targets */
     div[data-testid="stRadio"] > div {
         gap: 10px;
     }
@@ -64,21 +70,15 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def render_exp_with_latex(text):
-    """
-    解説文中の $ ... $ を検知し、数式として確実にレンダリングする。
-    """
     if not text:
         return "解説なし"
     processed_text = re.sub(r'(?<!\$)\$(?!\$)(.*?)\$', r'\n$$\1$$\n', text)
     st.markdown(processed_text)
 
 def main():
-    # 画面最上部にバージョン情報を表示
     st.markdown(f'<p class="version-info">ver {APP_VERSION}</p>', unsafe_allow_html=True)
-    
     st.title("🧠 建築設備士 択一クイズ")
 
-    # サイドバーに手動更新ボタンを追加
     if st.sidebar.button("🔄 Notionから最新データを取得"):
         clear_notion_cache()
         if 'all_notion_data' in st.session_state:
@@ -93,7 +93,6 @@ def main():
         st.error("Notionからデータが取得できませんでした。設定を確認してください。")
         return
 
-    # セクションリストを動的に作成
     available_sections = sorted(list(set([q['section'] for q in st.session_state.all_notion_data if q.get('section')])))
     
     st.subheader("📂 学習する分野を選択")
@@ -143,7 +142,6 @@ def main():
     q = st.session_state.questions[st.session_state.idx]
     st.session_state.current_question = q
 
-    # ヘッダー情報のレイアウト
     head_col1, head_col2 = st.columns([2, 1])
     
     with head_col1:
@@ -181,7 +179,6 @@ def main():
         correct_text = q["choices"][correct_idx] if correct_idx >= 0 else None
         is_correct = (st.session_state.selected == correct_text)
 
-        # 1. 各肢の詳細解説
         st.divider()
         st.markdown("### 📝 各肢の詳細解説")
         for i in range(4):
@@ -212,7 +209,6 @@ def main():
             """, unsafe_allow_html=True)
             render_exp_with_latex(exp_text)
 
-        # 2. 正誤判定
         st.divider()
         if is_correct:
             st.success(f"⭕ 正解！ (正解：肢 {ans_raw})")
@@ -221,14 +217,12 @@ def main():
         
         st.info("💡 さらに詳しく知りたい場合は、サイドバーの「4_AI_Tutor」へ相談してください。")
 
-        # 3. 画像
         current_images = st.session_state.get("current_image_urls", [])
         if current_images:
             for url in current_images:
                 st.divider()
                 st.image(url, use_container_width=True, caption=f"【図解】{q['q_id']}")
 
-        # 4. メモ
         st.divider()
         st.subheader("🧠 思考の振り返りメモ")
         memo_key = f"memo_{q['page_id']}"
@@ -242,7 +236,6 @@ def main():
                     q["my_memo"] = memo_text 
                     st.toast("メモを保存しました！", icon="✅")
 
-        # SRSボタン
         st.divider()
         st.markdown("##### 復習タイミングを選択（SRS更新）")
         cols = st.columns(4)

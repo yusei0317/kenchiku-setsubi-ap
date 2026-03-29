@@ -5,7 +5,7 @@ from core.db_handler import get_notion_data, update_srs_data, get_due_questions
 # ページ設定
 st.set_page_config(page_title="フラッシュカード", layout="wide", initial_sidebar_state="auto")
 
-# CSSスタイル（ユーザーのこだわりデザインを継承）
+# CSSスタイル
 st.markdown("""
 <style>
     [data-testid="stHeader"] { z-index: 1000000 !important; background: rgba(255, 255, 255, 0.8) !important; }
@@ -29,25 +29,15 @@ def main():
     # 1. セッション（データ取得）の初期化
     if 'flash_questions' not in st.session_state:
         with st.spinner("Notionから最新のカードを取得中..."):
-            all_raw = get_notion_data()
+            all_raw = get_notion_data() # すでにフォーマット済みのリストが返る
             due_ids = get_due_questions()
             
             qs = []
             for item in all_raw:
-                p = item.get("properties", {})
-                qid = p.get("id", {}).get("title", [{}])[0].get("plain_text", "")
-                
+                qid = item.get("q_id")
                 # 今日の復習期限内、または未学習の問題のみ抽出
                 if qid in due_ids:
-                    qs.append({
-                        "page_id": item.get("id"),
-                        "q_id": qid,
-                        "question": p.get("question", {}).get("rich_text", [{}])[0].get("plain_text", ""),
-                        "answer": p.get("answer", {}).get("rich_text", [{}])[0].get("plain_text", ""),
-                        "interval": p.get("interval", {}).get("number", 0) or 0,
-                        "ease_factor": p.get("ease_factor", {}).get("number", 2.5) or 2.5,
-                        "reps": p.get("reps", {}).get("number", 0) or 0
-                    })
+                    qs.append(item)
             
             random.shuffle(qs)
             st.session_state.flash_questions = qs
@@ -59,7 +49,8 @@ def main():
         st.balloons()
         st.success("🎉 今日の学習はすべて完了しました！")
         if st.button("もう一度最初から読み込む"):
-            del st.session_state.flash_questions
+            if 'flash_questions' in st.session_state:
+                del st.session_state.flash_questions
             st.rerun()
         return
 
@@ -107,7 +98,6 @@ def main():
         for i, (label, val) in enumerate(ratings):
             if cols[i].button(label, key=f"rate_{val}"):
                 with st.spinner("Notionに同期中..."):
-                    # db_handlerの更新関数にすべてのSRSデータを渡す
                     update_srs_data(
                         q['page_id'], val, q['interval'], q['ease_factor'], q['reps']
                     )
@@ -117,4 +107,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
