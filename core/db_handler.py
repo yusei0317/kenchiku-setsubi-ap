@@ -77,7 +77,6 @@ def get_notion_data():
             ans_num = p.get("answer", {}).get("number")
             ans_str = str(int(ans_num)) if ans_num is not None else ""
 
-            # 履歴系
             last_answered = p.get("last_answered", {}).get("date", {})
             last_answered_str = last_answered.get("start") if last_answered else None
             is_correct = p.get("is_correct", {}).get("checkbox", False)
@@ -85,10 +84,7 @@ def get_notion_data():
             next_date_prop = p.get("next_date", {}).get("date", {})
             next_date_str = next_date_prop.get("start") if next_date_prop else None
 
-            # correct_count 取得（Number型）
             correct_count = p.get("correct_count", {}).get("number", 0) or 0
-            
-            # interval 取得
             interval = p.get("interval", {}).get("number", 0) or 0
 
             formatted_data.append({
@@ -109,7 +105,8 @@ def get_notion_data():
                 "next_date": next_date_str,
                 "section": get_select("section"),
                 "exam_info": get_t("exam_info"),
-                "difficulty": get_select("difficulty")
+                "difficulty": get_select("difficulty"),
+                "history": get_t("history") # 追記用テキストプロパティ
             })
         return formatted_data
     except Exception as e:
@@ -128,42 +125,35 @@ def refresh_notion_images(page_id):
         return []
 
 def calculate_next_review(current_interval, is_correct):
-    """
-    Anki仕様の次回復習間隔計算
-    正解なら 2.5倍、不正解なら 1日にリセット
-    """
-    # 初期値がNoneや0の場合は1とする
     base_interval = current_interval if current_interval and current_interval > 0 else 1
-    
     if is_correct:
         return max(1, round(base_interval * 2.5))
     else:
         return 1
 
-def update_srs_data(page_id, quality, prev_interval, prev_ease, prev_reps, prev_correct_count=0, is_correct=None):
-    """
-    Anki仕様：正解なら interval を伸ばし、不正解なら 1日へ。
-    next_date を算出して Notion を更新する。
-    """
+def update_srs_data(page_id, quality, prev_interval, prev_ease, prev_reps, prev_correct_count=0, is_correct=None, prev_history=""):
     new_reps = prev_reps + 1
-    
-    # 正解・不正解に基づいた間隔の計算
     new_interval = calculate_next_review(prev_interval, is_correct)
     
-    # 評価(quality)に応じた微調整（オプション：Ankiの本来の挙動に近い形）
-    # quality: 0:もう一度, 1:難しい, 2:普通, 3:簡単
-    if quality == 3: # 簡単ならさらにもう少し伸ばす
+    if quality == 3:
         new_interval = round(new_interval * 1.2)
-    elif quality <= 1: # 難しい、もう一度なら 1日
+    elif quality <= 1:
         new_interval = 1
 
     today = datetime.now().strftime('%Y-%m-%d')
     next_review_date = (datetime.now() + timedelta(days=new_interval)).strftime('%Y-%m-%d')
     
-    # 正解数の計算
     new_correct_count = prev_correct_count
     if is_correct:
         new_correct_count += 1
+
+    # 履歴の追記ロジック: Date:Result|...
+    result_char = "O" if is_correct else "X"
+    new_history_entry = f"{today}:{result_char}|"
+    # 容量制限を考慮し、最新の履歴を前に持ってくる、または結合
+    full_history = new_history_entry + (prev_history if prev_history else "")
+    # Notionのテキストプロパティ制限（2000文字程度）を考慮し、古いものをカット
+    full_history = full_history[:1500]
 
     url = f"https://api.notion.com/v1/pages/{page_id}"
     properties = {
@@ -172,11 +162,11 @@ def update_srs_data(page_id, quality, prev_interval, prev_ease, prev_reps, prev_
         "reps": {"number": int(new_reps)},
         "correct_count": {"number": int(new_correct_count)},
         "last_answered": {"date": {"start": today}},
-        "is_correct": {"checkbox": bool(is_correct)}
+        "is_correct": {"checkbox": bool(is_correct)},
+        "history": {"rich_text": [{"text": {"content": full_history}}]}
     }
     
     payload = {"properties": properties}
-    
     try:
         res = requests.patch(url, headers=get_headers(), json=payload)
         res.raise_for_status()
@@ -189,11 +179,7 @@ def update_srs_data(page_id, quality, prev_interval, prev_ease, prev_reps, prev_
 def update_my_memo(page_id, memo_text):
     url = f"https://api.notion.com/v1/pages/{page_id}"
     payload = {
-        "properties": {
-            "my_memo": {
-                "rich_text": [{"text": {"content": memo_text}}]
-            }
-        }
+        "properties": {"my_memo": {"rich_text": [{"text": {"content": memo_text}}]}}
     }
     try:
         res = requests.patch(url, headers=get_headers(), json=payload)
@@ -204,63 +190,43 @@ def update_my_memo(page_id, memo_text):
         st.error(f"Notionのメモ更新に失敗しました: {e}")
         return False
 
-def update_srs(qid, quality):
-    data = get_notion_data()
-    q = next((item for item in data if item["q_id"] == qid), None)
-    if q:
-        # 簡易互換性用（本来は is_correct を判定すべきだが、quality >= 2 を正解とみなす）
-        return update_srs_data(q['page_id'], quality, q['interval'], q['ease_factor'], q['reps'], q['correct_count'], is_correct=(quality>=2))
-    return False
-
-def get_due_questions():
-    try:
-        db_id = st.secrets["notion"]["database_id"]
-        today = datetime.now().strftime('%Y-%m-%d')
-        url = f"https://api.notion.com/v1/databases/{db_id}/query"
-        filter_data = {
-            "filter": {
-                "or": [
-                    {"property": "next_date", "date": {"on_or_before": today}},
-                    {"property": "next_date", "is_empty": True}
-                ]
-            }
-        }
-        res = requests.post(url, headers=get_headers(), json=filter_data)
-        res.raise_for_status()
-        results = res.json().get("results", [])
-        ids = []
-        for item in results:
-            title_list = item.get("properties", {}).get("id", {}).get("title", [])
-            if title_list:
-                ids.append(title_list[0].get("plain_text", "").strip())
-        return ids
-    except:
-        return []
-
-def get_master_data():
-    data = get_notion_data()
-    if not data:
-        return pd.DataFrame()
-    df = pd.DataFrame(data)
-    df = df.rename(columns={"q_id": "id"})
-    return df
-
 def get_stats():
     data = get_notion_data()
     if not data:
         return pd.DataFrame(), pd.DataFrame()
     
     df = pd.DataFrame(data)
-    df_status = df[['q_id', 'reps', 'interval', 'last_answered', 'is_correct', 'next_date']].copy()
+    df_status = df[['q_id', 'reps', 'interval', 'last_answered', 'is_correct', 'next_date', 'section']].copy()
     df_status['mastery_level'] = df_status['reps'].apply(lambda x: 'Mastered' if x > 3 else 'Learning' if x > 0 else 'New')
-    df_history = df_status[df_status['last_answered'].notna()].copy()
-    df_history = df_history.rename(columns={'q_id': 'question_id', 'last_answered': 'timestamp'})
+    
+    # 履歴プロパティから詳細なイベントを抽出
+    all_logs = []
+    for _, row in df.iterrows():
+        hist_str = row.get("history", "")
+        if not hist_str: continue
+        
+        # 形式: YYYY-MM-DD:Result|
+        entries = hist_str.split("|")
+        for entry in entries:
+            if ":" in entry:
+                try:
+                    date_part, res_part = entry.split(":")
+                    all_logs.append({
+                        "timestamp": date_part,
+                        "question_id": row["q_id"],
+                        "section": row["section"],
+                        "is_correct": True if res_part == "O" else False
+                    })
+                except:
+                    continue
+    
+    df_history = pd.DataFrame(all_logs) if all_logs else pd.DataFrame(columns=['timestamp', 'question_id', 'section', 'is_correct'])
+    
     return df_status, df_history
 
 def call_gemini_api(prompt, system_instruction=""):
     api_key = st.secrets.get("gemini", {}).get("api_key")
-    if not api_key:
-        return "Gemini APIキーが設定されていません。"
+    if not api_key: return "Gemini APIキーが設定されていません。"
     try:
         genai.configure(api_key=api_key)
         full_prompt = f"【指示・役割】\n{system_instruction}\n\n【コンテキスト】\n{prompt}" if system_instruction else prompt

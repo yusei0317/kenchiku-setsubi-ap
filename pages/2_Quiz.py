@@ -75,7 +75,7 @@ def main():
         st.error("データの読み込みに失敗しました。")
         return
 
-    # 2. 【Anki仕様】忘却曲線モードの実装
+    # 忘却曲線モードの実装
     st.sidebar.header("⚙️ 学習モード")
     srs_mode = st.sidebar.toggle("🧠 忘却曲線モード（復習優先）", value=True)
     mode_label = "全問トレーニング" if not srs_mode else "忘却曲線モード"
@@ -168,8 +168,8 @@ def main():
                 correct_text = q["choices"][correct_idx] if correct_idx >= 0 else None
                 is_correct = (user_choice == correct_text)
                 
-                # 3. 【Anki仕様】解答の瞬間に初期 interval=1 で更新
-                update_srs_data(q['page_id'], 2, q['interval'], q['ease_factor'], q['reps'], q['correct_count'], is_correct)
+                # 解答の瞬間に更新（history を引き継ぐ）
+                update_srs_data(q['page_id'], 2, q['interval'], q['ease_factor'], q['reps'], q['correct_count'], is_correct, q.get('history', ""))
                 
                 with st.spinner("画像を読み込み中..."):
                     st.session_state.current_image_urls = refresh_notion_images(q['page_id'])
@@ -182,7 +182,7 @@ def main():
         correct_text = q["choices"][correct_idx] if correct_idx >= 0 else None
         is_correct = (st.session_state.selected == correct_text)
 
-        # 1. 各肢の詳細解説
+        # 各肢の詳細解説
         st.markdown("### 📝 各肢の詳細解説")
         for i in range(4):
             choice_text = q["choices"][i]
@@ -232,8 +232,8 @@ def main():
         labels = [("もう一度", 0), ("難しい", 1), ("普通", 2), ("簡単", 3)]
         for i, (label, val) in enumerate(labels):
             if cols[i].button(label, key=f"srs_{val}", use_container_width=True):
-                # 最終的な評価に基づいて次回日程を決定
-                update_srs_data(q['page_id'], val, q['interval'], q['ease_factor'], q['reps'], q['correct_count'], is_correct)
+                # 最終的な評価に基づいて次回日程を決定（history を引き継ぐ）
+                update_srs_data(q['page_id'], val, q['interval'], q['ease_factor'], q['reps'], q['correct_count'], is_correct, q.get('history', ""))
                 st.session_state.idx += 1
                 st.session_state.ans = False
                 st.session_state.selected = None
