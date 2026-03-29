@@ -200,8 +200,9 @@ def update_srs_data(page_id, quality, prev_interval, prev_ease, prev_reps, prev_
         "is_correct": {"checkbox": bool(is_correct)},
         "history": {"rich_text": [{"text": {"content": full_history}}]}
     }
+    payload = {"properties": properties}
     try:
-        res = requests.patch(url, headers=get_headers(), json=payload={"properties": properties})
+        res = requests.patch(url, headers=get_headers(), json=payload)
         res.raise_for_status()
         clear_notion_cache()
         return True
